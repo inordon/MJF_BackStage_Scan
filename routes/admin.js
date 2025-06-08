@@ -323,25 +323,30 @@ router.post('/users/:id/terminate-sessions', requireAuth, canManageUsers, async 
 // Удаление пользователя
 router.delete('/users/:id', requireAuth, canManageUsers, async (req, res) => {
     try {
-        const result = await transaction(async (client) => {const userId = id; // Сохраняем id в локальную переменную
+        const { id } = req.params;
 
-            const result = await transaction(async (client) => {
-                // Удаляем сессии
-                await client.query('DELETE FROM user_sessions WHERE user_id = $1', [userId]);
+        // Нельзя удалить самого себя
+        if (parseInt(id) === req.user.id) {
+            return res.status(400).json({ error: 'Нельзя удалить собственную учетную запись' });
+        }
 
-                // Обнуляем ссылки на пользователя
-                await client.query('UPDATE visitors SET created_by = NULL WHERE created_by = $1', [userId]);
-                await client.query('UPDATE visitors SET updated_by = NULL WHERE updated_by = $1', [userId]);
-                await client.query('UPDATE scans SET scanned_by = NULL WHERE scanned_by = $1', [userId]);
+        // Проверяем существование пользователя
+        const userCheck = await query('SELECT username FROM users WHERE id = $1', [id]);
 
-                // Удаляем пользователя
-                const deleteResult = await client.query('DELETE FROM users WHERE id = $1 RETURNING username', [userId]);
-                return deleteResult;
-            });
-
-        if (!result.rows.length) {
+        if (!userCheck.rows.length) {
             return res.status(404).json({ error: 'Пользователь не найден' });
         }
+
+        // Удаляем сессии пользователя
+        await query('DELETE FROM user_sessions WHERE user_id = $1', [id]);
+
+        // Обнуляем ссылки на пользователя в связанных таблицах
+        await query('UPDATE visitors SET created_by = NULL WHERE created_by = $1', [id]);
+        await query('UPDATE visitors SET updated_by = NULL WHERE updated_by = $1', [id]);
+        await query('UPDATE scans SET scanned_by = NULL WHERE scanned_by = $1', [id]);
+
+        // Удаляем пользователя
+        const result = await query('DELETE FROM users WHERE id = $1 RETURNING username', [id]);
 
         res.json({
             message: 'Пользователь успешно удален',
