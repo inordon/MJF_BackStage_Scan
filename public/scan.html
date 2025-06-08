@@ -300,46 +300,74 @@
             case 'success':
                 // Первое сканирование - зеленая галочка
                 container.innerHTML = `
-                        <div class="scan-icon success-icon">✅</div>
-                        <div class="visitor-name">${data.title}</div>
-                        ${data.comment ? `<div class="visitor-comment">"${data.comment}"</div>` : ''}
-                        <div class="status-info">
-                            <h4>✅ Проход разрешен</h4>
-                            <p><strong>Время сканирования:</strong> ${new Date(data.scanTime).toLocaleString('ru-RU')}</p>
-                            <p><strong>Статус:</strong> Первое сканирование за день</p>
-                        </div>
-                    `;
+                    <div class="scan-icon success-icon">✅</div>
+                    <div class="visitor-name">${data.title}</div>
+                    ${data.comment ? `<div class="visitor-comment">"${data.comment}"</div>` : ''}
+                    <div class="status-info">
+                        <h4>✅ Проход разрешен</h4>
+                        <p><strong>Время сканирования:</strong> ${new Date(data.scanTime).toLocaleString('ru-RU')}</p>
+                        <p><strong>Статус:</strong> Первое сканирование за день</p>
+                    </div>
+                `;
                 break;
 
             case 'warning':
                 // Повторное сканирование - оранжевый восклицательный знак
                 container.innerHTML = `
-                        <div class="scan-icon warning-icon">⚠️</div>
-                        <div class="visitor-name">${data.title}</div>
-                        ${data.comment ? `<div class="visitor-comment">"${data.comment}"</div>` : ''}
-                        <div class="scan-time">
-                            Время первого сканирования: ${new Date(data.firstScanTime).toLocaleString('ru-RU')}
-                        </div>
-                        <div class="status-info">
-                            <h4>⚠️ Повторное сканирование</h4>
-                            <p><strong>Текущее время:</strong> ${new Date(data.currentScanTime).toLocaleString('ru-RU')}</p>
-                            <p><strong>Статус:</strong> Посетитель уже проходил сегодня</p>
-                        </div>
-                    `;
+                    <div class="scan-icon warning-icon">⚠️</div>
+                    <div class="visitor-name">${data.title}</div>
+                    ${data.comment ? `<div class="visitor-comment">"${data.comment}"</div>` : ''}
+                    <div class="scan-time">
+                        Время первого сканирования: ${new Date(data.firstScanTime).toLocaleString('ru-RU')}
+                    </div>
+                    <div class="status-info">
+                        <h4>⚠️ Повторное сканирование</h4>
+                        <p><strong>Текущее время:</strong> ${new Date(data.currentScanTime).toLocaleString('ru-RU')}</p>
+                        <p><strong>Статус:</strong> Посетитель уже проходил сегодня</p>
+                    </div>
+                `;
+                break;
+
+            case 'info':
+                // Дублирующее сканирование - тоже показываем как повторное
+                container.innerHTML = `
+                    <div class="scan-icon warning-icon">⚠️</div>
+                    <div class="visitor-name">${data.title}</div>
+                    ${data.comment ? `<div class="visitor-comment">"${data.comment}"</div>` : ''}
+                    <div class="scan-time">
+                        Время последнего сканирования: ${new Date(data.lastScanTime).toLocaleString('ru-RU')}
+                    </div>
+                    <div class="status-info">
+                        <h4>⚠️ Повторное сканирование</h4>
+                        <p><strong>Текущее время:</strong> ${new Date(data.currentScanTime).toLocaleString('ru-RU')}</p>
+                        <p><strong>Статус:</strong> Посетитель уже проходил сегодня (${data.scanCount} раз)</p>
+                    </div>
+                `;
                 break;
 
             case 'error':
-                if (data.type === 'not_found' || data.type === 'blocked') {
-                    // QR код не найден или заблокирован - красный X
+                if (data.type === 'not_found') {
+                    // QR код не найден - два XX
                     container.innerHTML = `
-                            <div class="scan-icon error-icon">❌</div>
-                            <div class="error-message">ПРОХОД ЗАПРЕЩЕН</div>
-                            <div class="status-info">
-                                <h4>❌ Доступ запрещен</h4>
-                                <p><strong>Причина:</strong> ${data.type === 'not_found' ? 'QR код не найден в базе' : 'Посетитель заблокирован'}</p>
-                                <p><strong>Действие:</strong> Обратитесь к администратору</p>
-                            </div>
-                        `;
+                        <div class="scan-icon error-icon">❌❌</div>
+                        <div class="error-message">QR КОД НЕ НАЙДЕН</div>
+                        <div class="status-info">
+                            <h4>❌❌ QR код не найден в базе</h4>
+                            <p><strong>Причина:</strong> QR код не найден в базе данных</p>
+                            <p><strong>Действие:</strong> Обратитесь к администратору</p>
+                        </div>
+                    `;
+                } else if (data.type === 'blocked') {
+                    // Посетитель заблокирован - один X
+                    container.innerHTML = `
+                        <div class="scan-icon error-icon">❌</div>
+                        <div class="error-message">ПРОХОД ЗАПРЕЩЕН</div>
+                        <div class="status-info">
+                            <h4>❌ Посетитель заблокирован</h4>
+                            <p><strong>Причина:</strong> Посетитель заблокирован</p>
+                            <p><strong>Действие:</strong> Обратитесь к администратору</p>
+                        </div>
+                    `;
                 } else {
                     // Техническая ошибка - синяя буква i
                     displayError(data.title || 'Обратитесь к организатору', data.message);
@@ -355,15 +383,15 @@
     function displayError(title, message) {
         const container = document.getElementById('scan-content');
         container.innerHTML = `
-                <div class="scan-icon info-icon">ℹ️</div>
-                <div class="info-message">${title}</div>
-                <div class="status-info">
-                    <h4>ℹ️ Техническая информация</h4>
-                    <p><strong>Описание:</strong> ${message}</p>
-                    <p><strong>Время:</strong> ${new Date().toLocaleString('ru-RU')}</p>
-                    <p><strong>Рекомендация:</strong> Обратитесь к организатору мероприятия</p>
-                </div>
-            `;
+            <div class="scan-icon info-icon">ℹ️</div>
+            <div class="info-message">${title}</div>
+            <div class="status-info">
+                <h4>ℹ️ Техническая информация</h4>
+                <p><strong>Описание:</strong> ${message}</p>
+                <p><strong>Время:</strong> ${new Date().toLocaleString('ru-RU')}</p>
+                <p><strong>Рекомендация:</strong> Обратитесь к организатору мероприятия</p>
+            </div>
+        `;
     }
 
     // Проверка валидности UUID
