@@ -16,8 +16,13 @@
     "docker:down": "docker-compose down",
     "docker:restart": "docker-compose restart",
     "docker:logs": "docker-compose logs -f",
-    "docker:clean": "docker-compose down -v",
-    "setup": "npm install && npm run docker:up && sleep 10 && echo 'Система готова к работе!'",
+    "docker:clean": "docker-compose down -v && docker system prune -f",
+    "docker:rebuild": "docker-compose down && docker-compose up --build -d",
+    "docker:status": "./status.sh",
+    "docker:stop": "./stop.sh",
+    "setup": "./start.sh",
+    "stop": "./stop.sh",
+    "status": "./status.sh",
     "test:auth": "node -e \"console.log('Тест подключения к БД...'); require('./config/database').initDB().then(() => console.log('✅ OK')).catch(console.error)\""
   },
   "dependencies": {
@@ -46,7 +51,8 @@
     "nodejs",
     "postgresql",
     "express",
-    "javascript"
+    "javascript",
+    "docker"
   ],
   "author": "System Administrator",
   "license": "MIT",
@@ -56,10 +62,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-username/visitor-qr-system.git"
+    "url": "https://github.com/inordon/MJF_BackStage_Scan.git"
   },
   "bugs": {
-    "url": "https://github.com/your-username/visitor-qr-system/issues"
+    "url": "https://github.com/inordon/MJF_BackStage_Scan/issues"
   },
-  "homepage": "https://github.com/your-username/visitor-qr-system#readme"
+  "homepage": "https://github.com/inordon/MJF_BackStage_Scan#readme"
 }
