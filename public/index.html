@@ -1595,13 +1595,14 @@
 
         switch (action) {
             case 'reset-password':
-                showAlert('info', 'Функция сброса пароля в разработке');
+                await resetUserPassword(userId);
                 break;
             case 'toggle-user-status':
-                showAlert('info', 'Функция изменения статуса в разработке');
+                const isActive = e.target.dataset.active === 'true';
+                await toggleUserStatus(userId, isActive);
                 break;
             case 'delete-user':
-                showAlert('info', 'Функция удаления пользователя в разработке');
+                await deleteUser(userId);
                 break;
         }
     }
@@ -1622,7 +1623,92 @@
             showAlert('error', 'Ошибка загрузки системной статистики');
         }
     }
+    // Сброс пароля пользователя
+    async function resetUserPassword(userId) {
+        const newPassword = prompt('Введите новый пароль (минимум 6 символов):');
 
+        if (!newPassword) {
+            return;
+        }
+
+        if (newPassword.length < 6) {
+            showAlert('error', 'Пароль должен содержать минимум 6 символов');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/admin/users/${userId}/reset-password`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ newPassword })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                showAlert('success', data.message);
+            } else {
+                showAlert('error', data.error);
+            }
+        } catch (err) {
+            console.error('Ошибка сброса пароля:', err);
+            showAlert('error', 'Ошибка сброса пароля');
+        }
+    }
+
+    // Изменение статуса пользователя
+    async function toggleUserStatus(userId, isActive) {
+        const action = isActive ? 'заблокировать' : 'разблокировать';
+
+        if (!confirm(`Вы уверены, что хотите ${action} этого пользователя?`)) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/admin/users/${userId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ isActive: !isActive })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                showAlert('success', data.message);
+                loadAdminPanel();
+            } else {
+                showAlert('error', data.error);
+            }
+        } catch (err) {
+            console.error('Ошибка изменения статуса пользователя:', err);
+            showAlert('error', 'Ошибка изменения статуса пользователя');
+        }
+    }
+
+    // Удаление пользователя
+    async function deleteUser(userId) {
+        if (!confirm('Вы уверены, что хотите удалить этого пользователя?\n\nЭто действие нельзя отменить!')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/admin/users/${userId}`, {
+                method: 'DELETE'
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                showAlert('success', data.message);
+                loadAdminPanel();
+            } else {
+                showAlert('error', data.error);
+            }
+        } catch (err) {
+            console.error('Ошибка удаления пользователя:', err);
+            showAlert('error', 'Ошибка удаления пользователя');
+        }
+    }
     // Показ уведомлений
     function showAlert(type, message) {
         const alertDiv = document.createElement('div');
