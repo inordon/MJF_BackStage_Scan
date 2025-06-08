@@ -569,6 +569,34 @@
             opacity: 1;
         }
 
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal h3 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 20px;
@@ -1473,13 +1501,83 @@
         `;
 
         // Добавляем обработчики событий
-        document.getElementById('create-user-btn').addEventListener('click', () => {
-            showAlert('info', 'Функция создания пользователей в разработке');
-        });
-
+        document.getElementById('create-user-btn').addEventListener('click', showCreateUserForm);
         document.getElementById('system-stats-btn').addEventListener('click', loadSystemStats);
-
         container.addEventListener('click', handleAdminAction);
+    }
+
+    // Показ формы создания пользователя
+    function showCreateUserForm() {
+        const formHtml = `
+            <div id="create-user-modal" class="modal">
+                <div class="modal-content">
+                    <h3>Создание пользователя</h3>
+                    <form id="create-user-form">
+                        <div class="form-group">
+                            <label>Логин *</label>
+                            <input type="text" name="username" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Пароль *</label>
+                            <input type="password" name="password" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Полное имя *</label>
+                            <input type="text" name="fullName" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Роль *</label>
+                            <select name="role" required>
+                                <option value="moderator">Модератор</option>
+                                <option value="skd">СКД</option>
+                                <option value="admin">Администратор</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Email</label>
+                            <input type="email" name="email">
+                        </div>
+                        <div style="display: flex; gap: 10px; margin-top: 20px;">
+                            <button type="submit">Создать</button>
+                            <button type="button" class="btn-secondary" onclick="closeCreateUserForm()">Отмена</button>
+                        </div>
+                    </form>
+                </div>
+            </div>`;
+
+        document.body.insertAdjacentHTML('beforeend', formHtml);
+
+        document.getElementById('create-user-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const userData = Object.fromEntries(formData);
+
+            try {
+                const response = await fetch('/api/admin/users', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(userData)
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showAlert('success', 'Пользователь создан успешно');
+                    closeCreateUserForm();
+                    loadAdminPanel();
+                } else {
+                    showAlert('error', data.error);
+                }
+            } catch (err) {
+                showAlert('error', 'Ошибка создания пользователя');
+            }
+        });
+    }
+
+    // Закрытие формы создания пользователя
+    function closeCreateUserForm() {
+        const modal = document.getElementById('create-user-modal');
+        if (modal) modal.remove();
     }
 
     // Обработчик действий администратора
