@@ -71,7 +71,7 @@ router.get('/all', requireAuth, async (req, res) => {
         const offset = (page - 1) * limit;
 
         let queryText = `
-            SELECT v.id, v.visitor_uuid, v.last_name, v.first_name, v.middle_name, 
+            SELECT v.id, v.visitor_uuid, v.last_name, v.first_name, v.middle_name,
                    v.comment, v.status, v.created_at, v.updated_at,
                    v.photo_path, v.qr_code_path,
                    creator.username as created_by_username,
@@ -79,9 +79,9 @@ router.get('/all', requireAuth, async (req, res) => {
                    COUNT(s.id) as scan_count,
                    MAX(s.scanned_at) as last_scan
             FROM visitors v
-            LEFT JOIN users creator ON v.created_by = creator.id
-            LEFT JOIN users updater ON v.updated_by = updater.id
-            LEFT JOIN scans s ON v.id = s.visitor_id
+                     LEFT JOIN users creator ON v.created_by = creator.id
+                     LEFT JOIN users updater ON v.updated_by = updater.id
+                     LEFT JOIN scans s ON v.id = s.visitor_id
         `;
 
         const queryParams = [];
@@ -167,12 +167,12 @@ router.get('/:id', requireAuth, async (req, res) => {
         const { id } = req.params;
 
         const result = await query(`
-            SELECT v.*, 
+            SELECT v.*,
                    creator.username as created_by_username,
                    updater.username as updated_by_username
             FROM visitors v
-            LEFT JOIN users creator ON v.created_by = creator.id
-            LEFT JOIN users updater ON v.updated_by = updater.id
+                     LEFT JOIN users creator ON v.created_by = creator.id
+                     LEFT JOIN users updater ON v.updated_by = updater.id
             WHERE v.id = $1
         `, [id]);
 
@@ -224,10 +224,10 @@ router.post('/create', requireAuth, upload.single('photo'), visitorValidation, a
             // Создаем посетителя
             const visitorResult = await client.query(`
                 INSERT INTO visitors (
-                    visitor_uuid, last_name, first_name, middle_name, 
+                    visitor_uuid, last_name, first_name, middle_name,
                     comment, photo_path, status, created_by
                 ) VALUES ($1, $2, $3, $4, $5, $6, 'active', $7)
-                RETURNING id
+                    RETURNING id
             `, [
                 visitor_uuid, last_name, first_name,
                 middle_name, comment, photo_path, req.user.id
@@ -325,12 +325,12 @@ router.put('/:id', requireAuth, canModifyVisitor, upload.single('photo'), visito
         const finalStatus = status || existingVisitor.rows[0].status;
 
         const result = await query(`
-            UPDATE visitors SET 
-                last_name = $1, first_name = $2, middle_name = $3, 
-                comment = $4, photo_path = $5, status = $6,
-                updated_at = CURRENT_TIMESTAMP, updated_by = $7
+            UPDATE visitors SET
+                                last_name = $1, first_name = $2, middle_name = $3,
+                                comment = $4, photo_path = $5, status = $6,
+                                updated_at = CURRENT_TIMESTAMP, updated_by = $7
             WHERE id = $8
-            RETURNING *
+                RETURNING *
         `, [
             last_name, first_name, middle_name, comment,
             photo_path, finalStatus, req.user.id, id
@@ -369,12 +369,12 @@ router.patch('/:id/status', requireAuth, requireRole(['admin', 'moderator']), as
         }
 
         const result = await query(`
-            UPDATE visitors SET 
-                status = $1, 
-                updated_at = CURRENT_TIMESTAMP, 
-                updated_by = $2
+            UPDATE visitors SET
+                                status = $1,
+                                updated_at = CURRENT_TIMESTAMP,
+                                updated_by = $2
             WHERE id = $3
-            RETURNING *
+                RETURNING *
         `, [status, req.user.id, id]);
 
         if (!result.rows.length) {
@@ -426,10 +426,10 @@ router.get('/:id/scans', requireAuth, async (req, res) => {
             SELECT s.id, s.scan_type, s.scanned_at, s.ip_address, s.user_agent,
                    u.username as scanned_by_username, u.full_name as scanned_by_name
             FROM scans s
-            LEFT JOIN users u ON s.scanned_by = u.id
+                     LEFT JOIN users u ON s.scanned_by = u.id
             WHERE s.visitor_id = $1
             ORDER BY s.scanned_at DESC
-            LIMIT $2 OFFSET $3
+                LIMIT $2 OFFSET $3
         `, [id, limit, offset]);
 
         const countResult = await query(
@@ -467,7 +467,7 @@ router.get('/:id/scans', requireAuth, async (req, res) => {
 router.get('/stats/summary', requireAuth, async (req, res) => {
     try {
         const stats = await query(`
-            SELECT 
+            SELECT
                 COUNT(*) as total_visitors,
                 COUNT(CASE WHEN status = 'active' THEN 1 END) as active_visitors,
                 COUNT(CASE WHEN status = 'blocked' THEN 1 END) as blocked_visitors,
@@ -476,7 +476,7 @@ router.get('/stats/summary', requireAuth, async (req, res) => {
         `);
 
         const scanStats = await query(`
-            SELECT 
+            SELECT
                 COUNT(*) as total_scans,
                 COUNT(CASE WHEN scan_date = CURRENT_DATE THEN 1 END) as today_scans,
                 COUNT(DISTINCT visitor_id) as unique_visitors_scanned

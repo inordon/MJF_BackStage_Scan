@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Результат сканирования - Система посетителей</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .scan-container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            padding: 60px 40px;
+            width: 100%;
+            max-width: 600px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .scan-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+        }
+
+        .scan-icon {
+            font-size: 120px;
+            margin-bottom: 30px;
+            animation: scaleIn 0.6s ease-out;
+        }
+
+        .success-icon { color: #28a745; }
+        .warning-icon { color: #fd7e14; }
+        .error-icon { color: #dc3545; }
+        .info-icon { color: #17a2b8; }
+
+        @keyframes scaleIn {
+            from {
+                transform: scale(0) rotate(-180deg);
+                opacity: 0;
+            }
+            to {
+                transform: scale(1) rotate(0deg);
+                opacity: 1;
+            }
+        }
+
+        .visitor-name {
+            font-size: 2.8em;
+            font-weight: 700;
+            margin-bottom: 20px;
+            color: #333;
+            word-wrap: break-word;
+            line-height: 1.2;
+        }
+
+        .visitor-comment {
+            font-size: 1.4em;
+            color: #666;
+            margin-bottom: 25px;
+            line-height: 1.4;
+            font-style: italic;
+        }
+
+        .scan-time {
+            font-size: 1.2em;
+            color: #fd7e14;
+            font-weight: 600;
+            background: #fff3cd;
+            padding: 20px;
+            border-radius: 12px;
+            border: 2px solid #ffeaa7;
+            margin-bottom: 20px;
+        }
+
+        .error-message {
+            font-size: 1.8em;
+            font-weight: 600;
+            color: #dc3545;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .info-message {
+            font-size: 1.5em;
+            color: #17a2b8;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 60px;
+            height: 60px;
+            border: 6px solid #f3f3f3;
+            border-top: 6px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .status-info {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 30px;
+            text-align: left;
+        }
+
+        .status-info h4 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+        }
+
+        .status-info p {
+            color: #666;
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+
+        .back-button {
+            background: linear-gradient(135deg, #6c757d, #545b62);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 30px;
+        }
+
+        .back-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(108, 117, 125, 0.3);
+        }
+
+        .scan-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .detail-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .detail-label {
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+
+        .detail-value {
+            color: #666;
+            font-size: 16px;
+        }
+
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        @media (max-width: 600px) {
+            .scan-container {
+                padding: 40px 25px;
+                margin: 10px;
+            }
+
+            .visitor-name {
+                font-size: 2.2em;
+            }
+
+            .scan-icon {
+                font-size: 100px;
+            }
+
+            .visitor-comment {
+                font-size: 1.2em;
+            }
+
+            .scan-details {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .timestamp {
+            color: #888;
+            font-size: 14px;
+            margin-top: 20px;
+            font-style: italic;
+        }
+
+        .auto-refresh {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 12px;
+            color: #666;
+            background: rgba(255,255,255,0.8);
+            padding: 5px 10px;
+            border-radius: 15px;
+        }
+    </style>
+</head>
+<body>
+<div class="scan-container">
+    <div class="auto-refresh" id="auto-refresh">
+        Обновление через: <span id="countdown">-</span>с
+    </div>
+
+    <div id="scan-content">
+        <div class="loading pulse"></div>
+        <div style="font-size: 1.5em; color: #666; margin-bottom: 20px;">
+            Обработка QR-кода...
+        </div>
+    </div>
+
+    <div class="timestamp" id="timestamp"></div>
+</div>
+
+<script>
+    let countdownTimer;
+    let refreshTimer;
+
+    // Получаем UUID из URL
+    const pathParts = window.location.pathname.split('/');
+    const uuid = pathParts[pathParts.length - 1];
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        updateTimestamp();
+        await processScan();
+        startAutoRefresh();
+    });
+
+    // Обработка сканирования
+    async function processScan() {
+        try {
+            if (!uuid || !isValidUUID(uuid)) {
+                throw new Error('Некорректный QR код');
+            }
+
+            const response = await fetch(`/api/scan/${uuid}`);
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Ошибка сканирования');
+            }
+
+            displayScanResult(data);
+        } catch (err) {
+            console.error('Ошибка сканирования:', err);
+            displayError('Обратитесь к организатору', 'Произошла техническая ошибка');
+        }
+    }
+
+    // Отображение результата сканирования
+    function displayScanResult(data) {
+        const container = document.getElementById('scan-content');
+
+        switch (data.status) {
+            case 'success':
+                // Первое сканирование - зеленая галочка
+                container.innerHTML = `
+                        <div class="scan-icon success-icon">✅</div>
+                        <div class="visitor-name">${data.title}</div>
+                        ${data.comment ? `<div class="visitor-comment">"${data.comment}"</div>` : ''}
+                        <div class="status-info">
+                            <h4>✅ Проход разрешен</h4>
+                            <p><strong>Время сканирования:</strong> ${new Date(data.scanTime).toLocaleString('ru-RU')}</p>
+                            <p><strong>Статус:</strong> Первое сканирование за день</p>
+                        </div>
+                    `;
+                break;
+
+            case 'warning':
+                // Повторное сканирование - оранжевый восклицательный знак
+                container.innerHTML = `
+                        <div class="scan-icon warning-icon">⚠️</div>
+                        <div class="visitor-name">${data.title}</div>
+                        ${data.comment ? `<div class="visitor-comment">"${data.comment}"</div>` : ''}
+                        <div class="scan-time">
+                            Время первого сканирования: ${new Date(data.firstScanTime).toLocaleString('ru-RU')}
+                        </div>
+                        <div class="status-info">
+                            <h4>⚠️ Повторное сканирование</h4>
+                            <p><strong>Текущее время:</strong> ${new Date(data.currentScanTime).toLocaleString('ru-RU')}</p>
+                            <p><strong>Статус:</strong> Посетитель уже проходил сегодня</p>
+                        </div>
+                    `;
+                break;
+
+            case 'error':
+                if (data.type === 'not_found' || data.type === 'blocked') {
+                    // QR код не найден или заблокирован - красный X
+                    container.innerHTML = `
+                            <div class="scan-icon error-icon">❌</div>
+                            <div class="error-message">ПРОХОД ЗАПРЕЩЕН</div>
+                            <div class="status-info">
+                                <h4>❌ Доступ запрещен</h4>
+                                <p><strong>Причина:</strong> ${data.type === 'not_found' ? 'QR код не найден в базе' : 'Посетитель заблокирован'}</p>
+                                <p><strong>Действие:</strong> Обратитесь к администратору</p>
+                            </div>
+                        `;
+                } else {
+                    // Техническая ошибка - синяя буква i
+                    displayError(data.title || 'Обратитесь к организатору', data.message);
+                }
+                break;
+
+            default:
+                displayError('Обратитесь к организатору', 'Неизвестный тип ответа сервера');
+        }
+    }
+
+    // Отображение ошибки
+    function displayError(title, message) {
+        const container = document.getElementById('scan-content');
+        container.innerHTML = `
+                <div class="scan-icon info-icon">ℹ️</div>
+                <div class="info-message">${title}</div>
+                <div class="status-info">
+                    <h4>ℹ️ Техническая информация</h4>
+                    <p><strong>Описание:</strong> ${message}</p>
+                    <p><strong>Время:</strong> ${new Date().toLocaleString('ru-RU')}</p>
+                    <p><strong>Рекомендация:</strong> Обратитесь к организатору мероприятия</p>
+                </div>
+            `;
+    }
+
+    // Проверка валидности UUID
+    function isValidUUID(uuid) {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        return uuidRegex.test(uuid);
+    }
+
+    // Обновление временной метки
+    function updateTimestamp() {
+        const timestamp = document.getElementById('timestamp');
+        timestamp.textContent = `Последнее обновление: ${new Date().toLocaleString('ru-RU')}`;
+    }
+
+    // Автообновление страницы
+    function startAutoRefresh() {
+        let seconds = 30; // Обновление каждые 30 секунд
+
+        const countdownElement = document.getElementById('countdown');
+
+        countdownTimer = setInterval(() => {
+            seconds--;
+            countdownElement.textContent = seconds;
+
+            if (seconds <= 0) {
+                clearInterval(countdownTimer);
+                location.reload();
+            }
+        }, 1000);
+
+        countdownElement.textContent = seconds;
+    }
+
+    // Обработка ошибок JavaScript
+    window.addEventListener('error', (e) => {
+        console.error('JavaScript ошибка:', e.error);
+
+        const container = document.getElementById('scan-content');
+        if (container.innerHTML.includes('loading')) {
+            displayError('Обратитесь к организатору', 'Ошибка загрузки страницы');
+        }
+    });
+
+    // Обработка потери соединения
+    window.addEventListener('offline', () => {
+        const autoRefresh = document.getElementById('auto-refresh');
+        autoRefresh.innerHTML = '📶 Нет соединения';
+        autoRefresh.style.background = '#f8d7da';
+        autoRefresh.style.color = '#721c24';
+
+        clearInterval(countdownTimer);
+    });
+
+    window.addEventListener('online', () => {
+        location.reload();
+    });
+
+    // Очистка таймеров при уходе со страницы
+    window.addEventListener('beforeunload', () => {
+        if (countdownTimer) clearInterval(countdownTimer);
+        if (refreshTimer) clearInterval(refreshTimer);
+    });
+</script>
+</body>
+</html>
