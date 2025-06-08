@@ -1566,7 +1566,13 @@
                     closeCreateUserForm();
                     loadAdminPanel();
                 } else {
-                    showAlert('error', data.error);
+                    if (data.details && Array.isArray(data.details)) {
+                        const errors = data.details.map(detail => detail.msg).join(', ');
+                        showAlert('error', `${data.error}: ${errors}`);
+                    } else {
+                        showAlert('error', data.error);
+                    }
+                    // НЕ закрываем форму при ошибке
                 }
             } catch (err) {
                 showAlert('error', 'Ошибка создания пользователя');

@@ -25,7 +25,7 @@ const userValidation = [
         .isIn(['admin', 'moderator', 'skd'])
         .withMessage('Некорректная роль пользователя'),
     body('email')
-        .optional()
+        .optional({ checkFalsy: true })
         .isEmail()
         .withMessage('Некорректный email адрес')
 ];
