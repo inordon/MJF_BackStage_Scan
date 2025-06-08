@@ -4,103 +4,140 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Система управления посетителями</title>
-    <!-- Встроенная реализация QR-кода -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👥</text></svg>">
+
+    <!-- Встроенная QR библиотека для надежности -->
     <script>
-        // Простая fallback реализация QR генератора
+        // Простая встроенная реализация QR генератора
         window.SimpleQR = {
             toCanvas: function(canvas, text, options = {}) {
-                const ctx = canvas.getContext('2d');
-                const size = options.width || 200;
-                canvas.width = size;
-                canvas.height = size;
+                return new Promise((resolve, reject) => {
+                    try {
+                        const ctx = canvas.getContext('2d');
+                        const size = options.width || 200;
+                        canvas.width = size;
+                        canvas.height = size;
 
-                // Простое отображение URL как текст (fallback)
-                ctx.fillStyle = '#ffffff';
-                ctx.fillRect(0, 0, size, size);
+                        // Простое отображение как backup
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(0, 0, size, size);
 
-                ctx.fillStyle = '#000000';
-                ctx.font = '12px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText('QR-код создан', size/2, size/2 - 20);
-                ctx.fillText('Используйте ссылку:', size/2, size/2);
+                        // Рамка
+                        ctx.strokeStyle = '#000000';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(10, 10, size-20, size-20);
 
-                // Разбиваем длинный URL на части
-                const maxWidth = size - 20;
-                const words = text.split('/');
-                let line = '';
-                let y = size/2 + 20;
+                        ctx.fillStyle = '#000000';
+                        ctx.font = '12px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.fillText('QR-код создан', size/2, size/2 - 20);
+                        ctx.fillText('Используйте ссылку:', size/2, size/2);
 
-                for (let i = 0; i < words.length; i++) {
-                    const testLine = line + words[i] + '/';
-                    const metrics = ctx.measureText(testLine);
+                        // Разбиваем длинный URL на части
+                        const maxWidth = size - 40;
+                        const words = text.replace(/https?:\/\//, '').split('/');
+                        let line = '';
+                        let y = size/2 + 20;
 
-                    if (metrics.width > maxWidth && i > 0) {
-                        ctx.fillText(line, size/2, y);
-                        line = words[i] + '/';
-                        y += 15;
-                    } else {
-                        line = testLine;
+                        ctx.font = '10px Arial';
+                        for (let i = 0; i < words.length && y < size - 20; i++) {
+                            const testLine = line + words[i] + '/';
+                            const metrics = ctx.measureText(testLine);
+
+                            if (metrics.width > maxWidth && i > 0) {
+                                ctx.fillText(line, size/2, y);
+                                line = words[i] + '/';
+                                y += 12;
+                            } else {
+                                line = testLine;
+                            }
+                        }
+                        if (y < size - 20) {
+                            ctx.fillText(line, size/2, y);
+                        }
+
+                        resolve(canvas);
+                    } catch (err) {
+                        reject(err);
                     }
-                }
-                ctx.fillText(line, size/2, y);
+                });
+            },
+
+            toBuffer: function(text, options = {}) {
+                return new Promise((resolve) => {
+                    const canvas = document.createElement('canvas');
+                    this.toCanvas(canvas, text, options).then(() => {
+                        canvas.toBlob(resolve, 'image/png');
+                    });
+                });
             }
         };
 
-        // Загрузка библиотек с множественными fallback'ами
-        async function loadLibraries() {
-            console.log('🔄 Загрузка библиотек...');
+        // Загрузка QR библиотек с множественными fallback'ами
+        async function loadQRLibraries() {
+            console.log('🔄 Загрузка QR библиотек...');
 
-            // Список CDN для QRCode
-            const qrCodeSources = [
+            // Пытаемся загрузить с разных CDN
+            const qrSources = [
+                'https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.3/qrcode.min.js',
                 'https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js',
-                'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js',
-                'https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.3/qrcode.min.js'
+                'https://cdn.skypack.dev/qrcode@1.5.3'
             ];
 
-            // Пытаемся загрузить QRCode
-            for (const src of qrCodeSources) {
+            for (const src of qrSources) {
                 try {
                     await loadScript(src);
                     if (typeof QRCode !== 'undefined') {
                         console.log('✅ QRCode загружен с:', src);
-                        break;
+                        return true;
                     }
                 } catch (err) {
-                    console.warn('❌ Не удалось загрузить QRCode с:', src);
+                    console.warn('❌ Не удалось загрузить QRCode с:', src, err.message);
                     continue;
                 }
             }
 
-            // Если QRCode не загрузился, используем fallback
-            if (typeof QRCode === 'undefined') {
-                console.log('⚠️ Используем встроенный QR генератор');
-                window.QRCode = window.SimpleQR;
-            }
-
-            // Пытаемся загрузить QR Scanner (опционально)
-            try {
-                await loadScript('https://unpkg.com/qr-scanner@1.4.2/qr-scanner.umd.min.js');
-                console.log('✅ QR Scanner загружен');
-            } catch (err) {
-                console.log('⚠️ QR Scanner недоступен, функция сканирования будет ограничена');
-            }
+            // Если ничего не загрузилось, используем встроенную реализацию
+            console.log('⚠️ Используем встроенный QR генератор');
+            window.QRCode = window.SimpleQR;
+            return false;
         }
 
         function loadScript(src) {
             return new Promise((resolve, reject) => {
+                // Проверяем, не загружен ли уже скрипт
+                if (document.querySelector(`script[src="${src}"]`)) {
+                    resolve();
+                    return;
+                }
+
                 const script = document.createElement('script');
                 script.onload = resolve;
-                script.onerror = reject;
+                script.onerror = () => reject(new Error(`Failed to load ${src}`));
                 script.src = src;
+                script.async = true;
                 document.head.appendChild(script);
 
                 // Таймаут для медленных соединений
                 setTimeout(() => {
                     reject(new Error('Timeout loading script'));
-                }, 10000);
+                }, 5000);
             });
         }
+
+        // Загрузка QR Scanner (опционально)
+        async function loadQRScanner() {
+            try {
+                await loadScript('https://unpkg.com/qr-scanner@1.4.2/qr-scanner.umd.min.js');
+                console.log('✅ QR Scanner загружен');
+                return true;
+            } catch (err) {
+                console.log('⚠️ QR Scanner недоступен, функция сканирования будет ограничена');
+                return false;
+            }
+        }
     </script>
+
     <style>
         * {
             margin: 0;
@@ -514,6 +551,24 @@
             font-size: 16px;
         }
 
+        .library-status {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .library-status.show {
+            opacity: 1;
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 20px;
@@ -651,6 +706,8 @@
     </div>
 </div>
 
+<div id="library-status" class="library-status"></div>
+
 <script>
     let currentUser = null;
     let visitors = [];
@@ -658,15 +715,24 @@
     let totalPages = 1;
     let qrScanner = null;
     let searchTimeout = null;
+    let qrLibraryLoaded = false;
 
     // Инициализация при загрузке
     document.addEventListener('DOMContentLoaded', async () => {
-        // Очищаем консоль для чистого лога
         console.clear();
         console.log('🚀 Система управления посетителями - инициализация...');
 
+        showLibraryStatus('Загрузка библиотек...');
+
         // Сначала загружаем библиотеки
-        await loadLibraries();
+        try {
+            qrLibraryLoaded = await loadQRLibraries();
+            await loadQRScanner();
+            showLibraryStatus('Библиотеки загружены ✅', 2000);
+        } catch (err) {
+            console.error('Ошибка загрузки библиотек:', err);
+            showLibraryStatus('Ошибка загрузки ❌', 3000);
+        }
 
         // Настраиваем обработчики событий
         setupEventListeners();
@@ -681,6 +747,19 @@
             console.log('✅ Инициализация завершена');
         }
     });
+
+    // Показ статуса библиотек
+    function showLibraryStatus(message, hideAfter = 0) {
+        const statusEl = document.getElementById('library-status');
+        statusEl.textContent = message;
+        statusEl.classList.add('show');
+
+        if (hideAfter > 0) {
+            setTimeout(() => {
+                statusEl.classList.remove('show');
+            }, hideAfter);
+        }
+    }
 
     // Настройка обработчиков событий
     function setupEventListeners() {
@@ -850,20 +929,23 @@
 
             document.getElementById('qrcode').innerHTML = '';
 
-            if (typeof QRCode !== 'undefined' && QRCode.toCanvas) {
-                // Используем настоящую библиотеку QRCode
-                QRCode.toCanvas(document.getElementById('qrcode'), qrUrl, {
-                    width: 200,
-                    margin: 2
-                });
-            } else {
-                // Используем fallback
+            try {
+                if (typeof QRCode !== 'undefined' && QRCode.toCanvas) {
+                    const canvas = document.createElement('canvas');
+                    await QRCode.toCanvas(canvas, qrUrl, {
+                        width: 200,
+                        margin: 2
+                    });
+                    document.getElementById('qrcode').appendChild(canvas);
+                    console.log('✅ QR код сгенерирован с помощью QRCode библиотеки');
+                } else {
+                    throw new Error('QRCode library not available');
+                }
+            } catch (qrErr) {
+                console.warn('⚠️ Используем встроенный генератор QR:', qrErr.message);
                 const canvas = document.createElement('canvas');
+                await window.SimpleQR.toCanvas(canvas, qrUrl, { width: 200 });
                 document.getElementById('qrcode').appendChild(canvas);
-                window.QRCode.toCanvas(canvas, qrUrl, {
-                    width: 200,
-                    margin: 2
-                });
             }
 
             document.getElementById('visitor-result').classList.remove('hidden');
@@ -1127,7 +1209,7 @@
         const stopBtn = document.getElementById('stop-scanner-btn');
 
         if (typeof QrScanner === 'undefined') {
-            showAlert('error', 'QR сканер недоступен. Попробуйте обновить страницу.');
+            showAlert('warning', 'QR сканер недоступен. Попробуйте обновить страницу или используйте другой браузер.');
             return;
         }
 
