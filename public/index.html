@@ -4,50 +4,102 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Система управления посетителями</title>
-    <!-- Загружаем библиотеки с fallback'ом -->
+    <!-- Встроенная реализация QR-кода -->
     <script>
-        // Fallback для QRCode если основной CDN недоступен
-        function loadQRCode() {
-            return new Promise((resolve, reject) => {
-                const script = document.createElement('script');
-                script.onload = resolve;
-                script.onerror = () => {
-                    // Пробуем альтернативный CDN
-                    const fallbackScript = document.createElement('script');
-                    fallbackScript.onload = resolve;
-                    fallbackScript.onerror = reject;
-                    fallbackScript.src = 'https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js';
-                    document.head.appendChild(fallbackScript);
-                };
-                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.3/qrcode.min.js';
-                document.head.appendChild(script);
-            });
-        }
+        // Простая fallback реализация QR генератора
+        window.SimpleQR = {
+            toCanvas: function(canvas, text, options = {}) {
+                const ctx = canvas.getContext('2d');
+                const size = options.width || 200;
+                canvas.width = size;
+                canvas.height = size;
 
-        // Fallback для QR Scanner
-        function loadQRScanner() {
-            return new Promise((resolve, reject) => {
-                const script = document.createElement('script');
-                script.onload = resolve;
-                script.onerror = () => {
-                    console.warn('QR Scanner недоступен, будет использована альтернатива');
-                    resolve(); // Продолжаем работу без сканера
-                };
-                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/qr-scanner/1.4.2/qr-scanner.umd.min.js';
-                document.head.appendChild(script);
-            });
-        }
+                // Простое отображение URL как текст (fallback)
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, size, size);
 
-        // Загружаем библиотеки при загрузке страницы
-        document.addEventListener('DOMContentLoaded', async () => {
-            try {
-                await Promise.all([loadQRCode(), loadQRScanner()]);
-                console.log('Библиотеки загружены успешно');
-            } catch (err) {
-                console.error('Ошибка загрузки библиотек:', err);
-                showAlert('warning', 'Некоторые функции могут быть недоступны');
+                ctx.fillStyle = '#000000';
+                ctx.font = '12px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('QR-код создан', size/2, size/2 - 20);
+                ctx.fillText('Используйте ссылку:', size/2, size/2);
+
+                // Разбиваем длинный URL на части
+                const maxWidth = size - 20;
+                const words = text.split('/');
+                let line = '';
+                let y = size/2 + 20;
+
+                for (let i = 0; i < words.length; i++) {
+                    const testLine = line + words[i] + '/';
+                    const metrics = ctx.measureText(testLine);
+
+                    if (metrics.width > maxWidth && i > 0) {
+                        ctx.fillText(line, size/2, y);
+                        line = words[i] + '/';
+                        y += 15;
+                    } else {
+                        line = testLine;
+                    }
+                }
+                ctx.fillText(line, size/2, y);
             }
-        });
+        };
+
+        // Загрузка библиотек с множественными fallback'ами
+        async function loadLibraries() {
+            console.log('🔄 Загрузка библиотек...');
+
+            // Список CDN для QRCode
+            const qrCodeSources = [
+                'https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js',
+                'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js',
+                'https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.3/qrcode.min.js'
+            ];
+
+            // Пытаемся загрузить QRCode
+            for (const src of qrCodeSources) {
+                try {
+                    await loadScript(src);
+                    if (typeof QRCode !== 'undefined') {
+                        console.log('✅ QRCode загружен с:', src);
+                        break;
+                    }
+                } catch (err) {
+                    console.warn('❌ Не удалось загрузить QRCode с:', src);
+                    continue;
+                }
+            }
+
+            // Если QRCode не загрузился, используем fallback
+            if (typeof QRCode === 'undefined') {
+                console.log('⚠️ Используем встроенный QR генератор');
+                window.QRCode = window.SimpleQR;
+            }
+
+            // Пытаемся загрузить QR Scanner (опционально)
+            try {
+                await loadScript('https://unpkg.com/qr-scanner@1.4.2/qr-scanner.umd.min.js');
+                console.log('✅ QR Scanner загружен');
+            } catch (err) {
+                console.log('⚠️ QR Scanner недоступен, функция сканирования будет ограничена');
+            }
+        }
+
+        function loadScript(src) {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.onload = resolve;
+                script.onerror = reject;
+                script.src = src;
+                document.head.appendChild(script);
+
+                // Таймаут для медленных соединений
+                setTimeout(() => {
+                    reject(new Error('Timeout loading script'));
+                }, 10000);
+            });
+        }
     </script>
     <style>
         * {
@@ -609,10 +661,25 @@
 
     // Инициализация при загрузке
     document.addEventListener('DOMContentLoaded', async () => {
+        // Очищаем консоль для чистого лога
+        console.clear();
+        console.log('🚀 Система управления посетителями - инициализация...');
+
+        // Сначала загружаем библиотеки
+        await loadLibraries();
+
+        // Настраиваем обработчики событий
         setupEventListeners();
-        await checkAuth();
-        await loadVisitors();
-        await loadStats();
+
+        // Проверяем авторизацию
+        const isAuthenticated = await checkAuth();
+
+        // Загружаем данные только если авторизованы
+        if (isAuthenticated) {
+            console.log('📊 Загрузка данных...');
+            await Promise.all([loadVisitors(), loadStats()]);
+            console.log('✅ Инициализация завершена');
+        }
     });
 
     // Настройка обработчиков событий
@@ -654,15 +721,19 @@
             const data = await response.json();
 
             if (!data.authenticated) {
+                console.log('👤 Пользователь не авторизован, перенаправление...');
                 window.location.href = '/login';
-                return;
+                return false;
             }
 
             currentUser = data.user;
+            console.log('✅ Пользователь авторизован:', currentUser.username);
             updateUserInterface();
+            return true;
         } catch (err) {
-            console.error('Ошибка проверки авторизации:', err);
+            console.error('❌ Ошибка проверки авторизации:', err);
             window.location.href = '/login';
+            return false;
         }
     }
 
@@ -777,19 +848,22 @@
             // Генерируем QR код для отображения
             const qrUrl = `${window.location.origin}/scan/${data.visitor.visitor_uuid}`;
 
-            if (typeof QRCode !== 'undefined') {
-                document.getElementById('qrcode').innerHTML = '';
+            document.getElementById('qrcode').innerHTML = '';
+
+            if (typeof QRCode !== 'undefined' && QRCode.toCanvas) {
+                // Используем настоящую библиотеку QRCode
                 QRCode.toCanvas(document.getElementById('qrcode'), qrUrl, {
                     width: 200,
                     margin: 2
                 });
             } else {
-                // Fallback если QRCode не загружен
-                document.getElementById('qrcode').innerHTML =
-                    `<div style="padding: 20px; background: #f8f9fa; border-radius: 8px;">
-                        <p>QR-код создан</p>
-                        <p style="font-size: 12px; margin-top: 10px; word-break: break-all;">${qrUrl}</p>
-                    </div>`;
+                // Используем fallback
+                const canvas = document.createElement('canvas');
+                document.getElementById('qrcode').appendChild(canvas);
+                window.QRCode.toCanvas(canvas, qrUrl, {
+                    width: 200,
+                    margin: 2
+                });
             }
 
             document.getElementById('visitor-result').classList.remove('hidden');
@@ -808,6 +882,12 @@
     // Загрузка списка посетителей
     async function loadVisitors(page = 1) {
         try {
+            // Проверяем что пользователь авторизован
+            if (!currentUser) {
+                console.log('⚠️ Попытка загрузки данных без авторизации');
+                return;
+            }
+
             const search = document.getElementById('search-input')?.value || '';
             const status = document.getElementById('status-filter')?.value || '';
 
@@ -819,6 +899,14 @@
             });
 
             const response = await fetch(`/api/visitors?${params}`);
+
+            // Проверяем авторизацию
+            if (response.status === 401) {
+                console.log('🔑 Сессия истекла, перенаправление на авторизацию');
+                window.location.href = '/login';
+                return;
+            }
+
             const data = await response.json();
 
             if (!response.ok) {
@@ -833,7 +921,11 @@
             renderPagination();
         } catch (err) {
             console.error('Ошибка загрузки посетителей:', err);
-            showAlert('error', 'Ошибка загрузки списка посетителей');
+            if (err.message.includes('авторизация')) {
+                window.location.href = '/login';
+            } else {
+                showAlert('error', 'Ошибка загрузки списка посетителей');
+            }
         }
     }
 
@@ -1148,7 +1240,21 @@
     // Загрузка статистики
     async function loadStats() {
         try {
+            // Проверяем что пользователь авторизован
+            if (!currentUser) {
+                console.log('⚠️ Попытка загрузки статистики без авторизации');
+                return;
+            }
+
             const response = await fetch('/api/visitors/stats/overview');
+
+            // Проверяем авторизацию
+            if (response.status === 401) {
+                console.log('🔑 Сессия истекла, перенаправление на авторизацию');
+                window.location.href = '/login';
+                return;
+            }
+
             const data = await response.json();
 
             if (!response.ok) {
@@ -1158,7 +1264,11 @@
             renderStats(data);
         } catch (err) {
             console.error('Ошибка загрузки статистики:', err);
-            showAlert('error', 'Ошибка загрузки статистики');
+            if (err.message.includes('авторизация')) {
+                window.location.href = '/login';
+            } else {
+                showAlert('error', 'Ошибка загрузки статистики');
+            }
         }
     }
 
