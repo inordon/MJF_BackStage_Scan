@@ -27,17 +27,30 @@ if (!fs.existsSync(path.join(uploadDir, 'qr-codes'))) {
     fs.mkdirSync(path.join(uploadDir, 'qr-codes'), { recursive: true });
 }
 
-// Настройка безопасности
+// Настройка безопасности с исправленным CSP
 app.use(helmet({
     contentSecurityPolicy: {
         directives: {
             defaultSrc: ["'self'"],
             styleSrc: ["'self'", "'unsafe-inline'"],
-            scriptSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com"],
+            scriptSrc: [
+                "'self'",
+                "'unsafe-inline'", // Разрешаем inline скрипты для onclick
+                "'unsafe-eval'",   // Разрешаем eval для динамических функций
+                "https://cdnjs.cloudflare.com"
+            ],
+            scriptSrcAttr: ["'unsafe-inline'"], // Разрешаем onclick обработчики
             imgSrc: ["'self'", "data:", "blob:"],
             mediaSrc: ["'self'"],
+            connectSrc: ["'self'"],
+            fontSrc: ["'self'"],
+            objectSrc: ["'none'"],
+            frameSrc: ["'none'"],
+            baseUri: ["'self'"],
+            formAction: ["'self'"],
         },
     },
+    crossOriginEmbedderPolicy: false, // Отключаем для совместимости
 }));
 
 // Rate limiting
