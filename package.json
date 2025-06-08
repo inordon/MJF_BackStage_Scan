@@ -5,7 +5,20 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node_modules/.bin/nodemon server.js"
+    "dev": "node_modules/.bin/nodemon server.js",
+    "generate-hashes": "node scripts/generate-password-hashes.js",
+    "reset-db": "node scripts/reset-database.js",
+    "create-admin": "node scripts/create-admin.js",
+    "backup-db": "node scripts/backup-database.js",
+    "backup-data": "node scripts/backup-database.js data",
+    "backup-schema": "node scripts/backup-database.js schema",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:restart": "docker-compose restart",
+    "docker:logs": "docker-compose logs -f",
+    "docker:clean": "docker-compose down -v",
+    "setup": "npm install && npm run docker:up && sleep 10 && echo 'Система готова к работе!'",
+    "test:auth": "node -e \"console.log('Тест подключения к БД...'); require('./config/database').initDB().then(() => console.log('✅ OK')).catch(console.error)\""
   },
   "dependencies": {
     "express": "^4.18.2",
@@ -31,8 +44,22 @@
     "qr-codes",
     "access-control",
     "nodejs",
-    "postgresql"
+    "postgresql",
+    "express",
+    "javascript"
   ],
   "author": "System Administrator",
-  "license": "MIT"
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/visitor-qr-system.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/visitor-qr-system/issues"
+  },
+  "homepage": "https://github.com/your-username/visitor-qr-system#readme"
 }
