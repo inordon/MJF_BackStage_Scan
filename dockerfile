@@ -4,8 +4,13 @@ FROM node:18-alpine
 # Устанавливаем рабочую директорию
 WORKDIR /app
 
-# Устанавливаем curl для healthcheck
-RUN apk add --no-cache curl
+# Устанавливаем зависимости системы, включая postgresql-client для скриптов бэкапа
+RUN apk add --no-cache \
+    curl \
+    postgresql-client \
+    python3 \
+    make \
+    g++
 
 # Копируем package.json и package-lock.json (если есть)
 COPY package*.json ./
@@ -18,7 +23,7 @@ RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodeuser -u 1001
 
 # Создаем необходимые директории и устанавливаем права
-RUN mkdir -p uploads/photos uploads/qr-codes public && \
+RUN mkdir -p uploads/photos uploads/qr-codes public scripts && \
     chown -R nodeuser:nodejs /app
 
 # Копируем исходный код приложения
@@ -31,7 +36,7 @@ USER nodeuser
 EXPOSE 3000
 
 # Добавляем healthcheck
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:3000/api/admin/health || exit 1
 
 # Запускаем приложение
