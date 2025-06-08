@@ -323,19 +323,21 @@ router.post('/users/:id/terminate-sessions', requireAuth, canManageUsers, async 
 // Удаление пользователя
 router.delete('/users/:id', requireAuth, canManageUsers, async (req, res) => {
     try {
-        const result = await transaction(async (client) => {
-            // Удаляем сессии
-            await client.query('DELETE FROM user_sessions WHERE user_id = $1', [id]);
+        const result = await transaction(async (client) => {const userId = id; // Сохраняем id в локальную переменную
 
-            // Обнуляем ссылки на пользователя
-            await client.query('UPDATE visitors SET created_by = NULL WHERE created_by = $1', [id]);
-            await client.query('UPDATE visitors SET updated_by = NULL WHERE updated_by = $1', [id]);
-            await client.query('UPDATE scans SET scanned_by = NULL WHERE scanned_by = $1', [id]);
+            const result = await transaction(async (client) => {
+                // Удаляем сессии
+                await client.query('DELETE FROM user_sessions WHERE user_id = $1', [userId]);
 
-            // Удаляем пользователя
-            const deleteResult = await client.query('DELETE FROM users WHERE id = $1 RETURNING username', [id]);
-            return deleteResult;
-        });
+                // Обнуляем ссылки на пользователя
+                await client.query('UPDATE visitors SET created_by = NULL WHERE created_by = $1', [userId]);
+                await client.query('UPDATE visitors SET updated_by = NULL WHERE updated_by = $1', [userId]);
+                await client.query('UPDATE scans SET scanned_by = NULL WHERE scanned_by = $1', [userId]);
+
+                // Удаляем пользователя
+                const deleteResult = await client.query('DELETE FROM users WHERE id = $1 RETURNING username', [userId]);
+                return deleteResult;
+            });
 
         if (!result.rows.length) {
             return res.status(404).json({ error: 'Пользователь не найден' });
