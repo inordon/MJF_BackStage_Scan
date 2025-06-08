@@ -1,17 +1,36 @@
-node_modules
-npm-debug.log
+# Git
 .git
 .gitignore
+
+# Documentation
 README.md
+*.md
+
+# Dependencies (будут установлены в контейнере)
+node_modules
+
+# Development files
 .env
-.nyc_output
-coverage
-.coverage
+npm-debug.log
+
+# IDE
+.vscode
+.idea
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backups
 backups
+
+# Uploads (монтируются как volume)
 uploads/*.png
 uploads/*.jpg
 uploads/*.jpeg
-uploads/qr-codes/*
-uploads/photos/*
-.DS_Store
-Thumbs.db
+
+# Development scripts
+start.sh
+stop.sh
+status.sh

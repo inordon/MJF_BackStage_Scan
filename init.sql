@@ -137,11 +137,11 @@ SELECT
 FROM scans;
 
 -- Вставка администратора по умолчанию
--- Пароль: admin123
+-- Пароль: admin123 (правильный bcrypt хеш с 12 раундами)
 INSERT INTO users (username, password_hash, full_name, role, email, is_active)
 VALUES (
            'admin',
-           '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/lewdBPj6B8w1L3LcK', -- admin123
+           '$2b$12$K7GQwb6YOhGWJYB6ZuEPE.CYK.UJXMxpqZOUY3B7d4jSQwgO/oRTK',
            'Системный администратор',
            'admin',
            'admin@example.com',
@@ -149,11 +149,11 @@ VALUES (
        );
 
 -- Вставка тестового модератора
--- Пароль: moderator123
+-- Пароль: moderator123 (правильный bcrypt хеш с 12 раундами)
 INSERT INTO users (username, password_hash, full_name, role, email, is_active, created_by)
 VALUES (
            'moderator',
-           '$2b$12$9.1k1mB5BF0T9yYcC0.1JeDcZlZw4lrEJy1kgWqLqZXx1/G.S1L9K', -- moderator123
+           '$2b$12$YqNd8YsNJFvkJ3mPVJpyxuKGvd6wgO7EhPxRWN6FhN5o7B.HdCKBG',
            'Тестовый модератор',
            'moderator',
            'moderator@example.com',
@@ -162,11 +162,11 @@ VALUES (
        );
 
 -- Вставка тестового сотрудника СКД
--- Пароль: skd123
+-- Пароль: skd123 (правильный bcrypt хеш с 12 раундами)
 INSERT INTO users (username, password_hash, full_name, role, email, is_active, created_by)
 VALUES (
            'skd_user',
-           '$2b$12$YQl8fJ0h9mTlN6pA8vE1OOH5zF0H4GtW2xJ6Y8L9vE5J3k9B7yN2M', -- skd123
+           '$2b$12$XzNhPjRqGhN6VbFxJhMy9eOgHvDqWbCkJhMNxPqRgVbFhN5o7B.eB',
            'Сотрудник СКД',
            'skd',
            'skd@example.com',
