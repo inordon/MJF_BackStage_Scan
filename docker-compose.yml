@@ -1,0 +1,65 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: visitor_db
+    environment:
+      POSTGRES_DB: visitor_system
+      POSTGRES_USER: visitor_admin
+      POSTGRES_PASSWORD: secure_password_123
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - visitor_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U visitor_admin -d visitor_system"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: visitor_app
+    environment:
+      NODE_ENV: production
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: visitor_system
+      DB_USER: visitor_admin
+      DB_PASSWORD: secure_password_123
+      JWT_SECRET: your_super_secret_jwt_key_here_change_in_production
+      SESSION_SECRET: your_session_secret_key_here_change_in_production
+      UPLOAD_PATH: /app/uploads
+      FRONTEND_URL: http://localhost:3000
+      APP_VERSION: 1.0.0
+    volumes:
+      - ./uploads:/app/uploads
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - visitor_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/admin/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  visitor_network:
+    driver: bridge
