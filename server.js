@@ -55,33 +55,30 @@ app.use(helmet({
     crossOriginEmbedderPolicy: false,
 }));
 
-// Более мягкий общий rate limiting
+// Rate limiting с улучшенными настройками
 const generalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 минут
-    max: 1000, // 1000 запросов за окно (было 100)
+    max: 1000, // 1000 запросов за окно
     message: { error: 'Слишком много запросов с этого IP' },
     standardHeaders: true,
     legacyHeaders: false,
     skip: (req) => {
-        // Пропускаем статические файлы
         return req.url.startsWith('/uploads/') ||
             req.url.startsWith('/favicon.ico');
     }
 });
 app.use(generalLimiter);
 
-// Более разумный лимит для авторизации
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 минут
-    max: 20, // 20 попыток входа за 15 минут (было 5)
+    max: 20, // 20 попыток входа за 15 минут
     message: { error: 'Слишком много попыток входа. Попробуйте через 15 минут.' },
     standardHeaders: true,
     legacyHeaders: false,
-    skipSuccessfulRequests: true, // Не считаем успешные запросы
+    skipSuccessfulRequests: true,
     skipFailedRequests: false
 });
 
-// Лимит для API запросов (более мягкий)
 const apiLimiter = rateLimit({
     windowMs: 1 * 60 * 1000, // 1 минута
     max: 60, // 60 запросов в минуту
@@ -93,7 +90,7 @@ const apiLimiter = rateLimit({
 // Middleware
 app.use(compression());
 
-// Более детальное логирование в development
+// Детальное логирование
 if (process.env.NODE_ENV === 'development') {
     app.use(morgan('dev'));
 } else {
@@ -107,19 +104,19 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Настройка сессий с улучшенными параметрами
+// Настройка сессий
 app.use(session({
     secret: process.env.SESSION_SECRET || 'your-secret-key-change-this',
     resave: false,
     saveUninitialized: false,
-    name: 'visitor.sid', // Кастомное имя сессии
+    name: 'visitor.sid',
     cookie: {
         secure: process.env.NODE_ENV === 'production' && process.env.HTTPS === 'true',
         httpOnly: true,
         maxAge: 24 * 60 * 60 * 1000, // 24 часа
-        sameSite: 'lax' // Помогает с CSRF защитой
+        sameSite: 'lax'
     },
-    rolling: true // Обновляем срок действия при активности
+    rolling: true
 }));
 
 // Статические файлы
@@ -131,25 +128,26 @@ const authRoutes = require('./routes/auth');
 const visitorRoutes = require('./routes/visitors');
 const scanRoutes = require('./routes/scan');
 const adminRoutes = require('./routes/admin');
+const eventRoutes = require('./routes/events'); // Новые маршруты для событий
 
-// Маршруты API с правильными лимитами
+// Маршруты API
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/visitors', apiLimiter, visitorRoutes);
 app.use('/api/scan', apiLimiter, scanRoutes);
 app.use('/api/admin', apiLimiter, adminRoutes);
+app.use('/api/events', apiLimiter, eventRoutes); // Подключаем маршруты событий
 
 // Главная страница
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Страница сканирования (для QR кодов)
+// Страница сканирования
 app.get('/scan/:uuid', async (req, res) => {
     const { uuid } = req.params;
 
     // Проверяем авторизацию
     if (!req.session.userId) {
-        // Перенаправляем на страницу авторизации с возвратом на сканирование
         return res.redirect(`/login?return=/scan/${uuid}`);
     }
 
@@ -161,13 +159,33 @@ app.get('/login', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
-// Health check endpoint (без rate limiting)
+// Health check endpoint
 app.get('/health', (req, res) => {
     res.json({
         status: 'ok',
         timestamp: new Date().toISOString(),
-        uptime: process.uptime()
+        uptime: process.uptime(),
+        version: process.env.APP_VERSION || '1.0.0'
     });
+});
+
+// Middleware для обработки ошибок multer
+app.use((err, req, res, next) => {
+    if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+            return res.status(413).json({ error: 'Файл слишком большой. Максимальный размер: 5MB' });
+        }
+        if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+            return res.status(400).json({ error: 'Неожиданный файл в запросе' });
+        }
+    }
+
+    if (err.message && err.message.includes('Only images allowed')) {
+        return res.status(400).json({ error: 'Разрешены только изображения' });
+    }
+
+    console.error('Ошибка Multer:', err);
+    next(err);
 });
 
 // Обработка ошибок 404
@@ -177,7 +195,7 @@ app.use((req, res) => {
 
 // Обработка глобальных ошибок
 app.use((err, req, res, next) => {
-    console.error('Ошибка сервера:', err);
+    console.error('Глобальная ошибка сервера:', err);
 
     // Специальная обработка ошибок rate limiting
     if (err.status === 429) {
@@ -188,14 +206,35 @@ app.use((err, req, res, next) => {
     }
 
     if (err.type === 'entity.too.large') {
-        return res.status(413).json({ error: 'Файл слишком большой' });
+        return res.status(413).json({ error: 'Запрос слишком большой' });
+    }
+
+    // Обработка ошибок валидации
+    if (err.name === 'ValidationError') {
+        return res.status(400).json({
+            error: 'Ошибка валидации данных',
+            details: err.message
+        });
+    }
+
+    // Обработка ошибок базы данных
+    if (err.code === '23505') { // Unique constraint violation
+        return res.status(400).json({
+            error: 'Запись с такими данными уже существует'
+        });
+    }
+
+    if (err.code === '23503') { // Foreign key constraint violation
+        return res.status(400).json({
+            error: 'Ссылка на несуществующую запись'
+        });
     }
 
     // В production не показываем детали ошибок
     const isDevelopment = process.env.NODE_ENV === 'development';
 
-    res.status(500).json({
-        error: 'Внутренняя ошибка сервера',
+    res.status(err.status || 500).json({
+        error: err.message || 'Внутренняя ошибка сервера',
         ...(isDevelopment && {
             details: err.message,
             stack: err.stack
@@ -204,14 +243,35 @@ app.use((err, req, res, next) => {
 });
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
-    console.log('🛑 Получен сигнал SIGTERM, завершение работы...');
-    process.exit(0);
+const gracefulShutdown = (signal) => {
+    console.log(`🛑 Получен сигнал ${signal}, начинаем graceful shutdown...`);
+
+    const { closePool } = require('./config/database');
+
+    closePool().then(() => {
+        console.log('✅ Соединения с БД закрыты');
+        process.exit(0);
+    }).catch((err) => {
+        console.error('❌ Ошибка при закрытии соединений с БД:', err);
+        process.exit(1);
+    });
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// Обработка необработанных промисов
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+    // В production можно добавить логирование в файл или внешний сервис
 });
 
-process.on('SIGINT', () => {
-    console.log('🛑 Получен сигнал SIGINT, завершение работы...');
-    process.exit(0);
+process.on('uncaughtException', (err) => {
+    console.error('Uncaught Exception:', err);
+    // В production лучше перезапустить процесс
+    if (process.env.NODE_ENV === 'production') {
+        process.exit(1);
+    }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
@@ -220,12 +280,18 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`🔒 База данных: ${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || 5432}`);
     console.log(`🌐 Доступен по адресу: http://localhost:${PORT}`);
 
+    // Показываем демо аккаунты только в development
     if (process.env.NODE_ENV !== 'production') {
         console.log('🔐 Демо аккаунты:');
         console.log('   👑 admin / admin123');
         console.log('   ⚙️ moderator / moderator123');
         console.log('   🔒 skd_user / skd123');
     }
+
+    console.log('✨ Новые возможности:');
+    console.log('   🎯 Управление событиями');
+    console.log('   📊 Статистика по событиям');
+    console.log('   🔗 Привязка посетителей к событиям');
 });
 
 module.exports = app;
