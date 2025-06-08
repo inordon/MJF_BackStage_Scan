@@ -17,7 +17,7 @@ const userValidation = [
     body('password')
         .isLength({ min: 6 })
         .withMessage('Пароль должен содержать минимум 6 символов'),
-    body('full_name')
+    body('fullName')
         .trim()
         .isLength({ min: 2, max: 100 })
         .withMessage('Полное имя должно содержать от 2 до 100 символов'),
@@ -37,18 +37,18 @@ router.get('/users', requireAuth, canManageUsers, async (req, res) => {
         const offset = (page - 1) * limit;
 
         let queryText = `
-            SELECT 
-                u.id, u.username, u.role, u.full_name, u.email, 
+            SELECT
+                u.id, u.username, u.role, u.full_name, u.email,
                 u.is_active, u.created_at, u.updated_at, u.last_login,
                 creator.full_name as created_by_name,
                 updater.full_name as updated_by_name,
                 COUNT(DISTINCT s.session_token) as active_sessions,
                 COUNT(DISTINCT sc.id) as scans_today
             FROM users u
-            LEFT JOIN users creator ON u.created_by = creator.id
-            LEFT JOIN users updater ON u.updated_by = updater.id
-            LEFT JOIN user_sessions s ON u.id = s.user_id AND s.expires_at > CURRENT_TIMESTAMP
-            LEFT JOIN scans sc ON u.id = sc.scanned_by AND sc.scan_date = CURRENT_DATE
+                     LEFT JOIN users creator ON u.created_by = creator.id
+                     LEFT JOIN users updater ON u.updated_by = updater.id
+                     LEFT JOIN user_sessions s ON u.id = s.user_id AND s.expires_at > CURRENT_TIMESTAMP
+                     LEFT JOIN scans sc ON u.id = sc.scanned_by AND sc.scan_date = CURRENT_DATE
         `;
 
         const conditions = [];
@@ -128,7 +128,7 @@ router.post('/users', requireAuth, canManageUsers, userValidation, async (req, r
             });
         }
 
-        const { username, password, full_name, role, email } = req.body;
+        const { username, password, fullName, role, email } = req.body;
 
         // Проверяем уникальность логина
         const existingUser = await query(
@@ -159,12 +159,12 @@ router.post('/users', requireAuth, canManageUsers, userValidation, async (req, r
         // Создаем пользователя
         const newUserResult = await query(`
             INSERT INTO users (
-                username, password_hash, full_name, role, email, 
+                username, password_hash, full_name, role, email,
                 is_active, created_by
             ) VALUES ($1, $2, $3, $4, $5, true, $6)
-            RETURNING id, username, full_name, role, email, is_active, created_at
+                RETURNING id, username, full_name, role, email, is_active, created_at
         `, [
-            username, passwordHash, full_name, role,
+            username, passwordHash, fullName, role,
             email, req.user.id
         ]);
 
@@ -193,7 +193,7 @@ router.post('/users', requireAuth, canManageUsers, userValidation, async (req, r
 router.put('/users/:id', requireAuth, canManageUsers, async (req, res) => {
     try {
         const { id } = req.params;
-        const { full_name, role, email, is_active } = req.body;
+        const { fullName, role, email, isActive } = req.body;
 
         // Проверяем существование пользователя
         const existingUser = await query('SELECT * FROM users WHERE id = $1', [id]);
@@ -220,16 +220,16 @@ router.put('/users/:id', requireAuth, canManageUsers, async (req, res) => {
         }
 
         const result = await query(`
-            UPDATE users SET 
-                full_name = $1, role = $2, email = $3, is_active = $4,
-                updated_at = CURRENT_TIMESTAMP, updated_by = $5
+            UPDATE users SET
+                             full_name = $1, role = $2, email = $3, is_active = $4,
+                             updated_at = CURRENT_TIMESTAMP, updated_by = $5
             WHERE id = $6
-            RETURNING id, username, full_name, role, email, is_active, updated_at
+                RETURNING id, username, full_name, role, email, is_active, updated_at
         `, [
-            full_name || existingUser.rows[0].full_name,
+            fullName || existingUser.rows[0].full_name,
             role || existingUser.rows[0].role,
             email,
-            is_active !== undefined ? is_active : existingUser.rows[0].is_active,
+            isActive !== undefined ? isActive : existingUser.rows[0].is_active,
             req.user.id,
             id
         ]);
@@ -257,9 +257,9 @@ router.put('/users/:id', requireAuth, canManageUsers, async (req, res) => {
 router.post('/users/:id/reset-password', requireAuth, canManageUsers, async (req, res) => {
     try {
         const { id } = req.params;
-        const { new_password } = req.body;
+        const { newPassword } = req.body;
 
-        if (!new_password || new_password.length < 6) {
+        if (!newPassword || newPassword.length < 6) {
             return res.status(400).json({ error: 'Новый пароль должен содержать минимум 6 символов' });
         }
 
@@ -272,7 +272,7 @@ router.post('/users/:id/reset-password', requireAuth, canManageUsers, async (req
 
         // Хешируем новый пароль
         const saltRounds = 12;
-        const passwordHash = await bcrypt.hash(new_password, saltRounds);
+        const passwordHash = await bcrypt.hash(newPassword, saltRounds);
 
         await query(
             'UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP, updated_by = $2 WHERE id = $3',
@@ -290,6 +290,33 @@ router.post('/users/:id/reset-password', requireAuth, canManageUsers, async (req
     } catch (err) {
         console.error('Ошибка сброса пароля:', err);
         res.status(500).json({ error: 'Ошибка сервера при сбросе пароля' });
+    }
+});
+
+// Завершение всех сессий пользователя
+router.post('/users/:id/terminate-sessions', requireAuth, canManageUsers, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Проверяем существование пользователя
+        const userCheck = await query('SELECT username FROM users WHERE id = $1', [id]);
+
+        if (!userCheck.rows.length) {
+            return res.status(404).json({ error: 'Пользователь не найден' });
+        }
+
+        // Завершаем все сессии пользователя
+        const result = await query('DELETE FROM user_sessions WHERE user_id = $1', [id]);
+
+        res.json({
+            message: `Все сессии пользователя завершены`,
+            terminatedSessions: result.rowCount,
+            username: userCheck.rows[0].username
+        });
+
+    } catch (err) {
+        console.error('Ошибка завершения сессий:', err);
+        res.status(500).json({ error: 'Ошибка сервера при завершении сессий' });
     }
 });
 
@@ -349,8 +376,20 @@ router.get('/stats', requireAuth, requireRole(['admin']), async (req, res) => {
     try {
         const dbStats = await getDBStats();
 
+        // Дополнительная статистика
+        const additionalStats = await query(`
+            SELECT 
+                COUNT(CASE WHEN v.created_at >= CURRENT_DATE - INTERVAL '7 days' THEN 1 END) as recent_changes,
+                COUNT(CASE WHEN s.scanned_at >= CURRENT_TIMESTAMP - INTERVAL '1 hour' THEN 1 END) as recent_scans
+            FROM visitors v
+            FULL OUTER JOIN scans s ON 1=1
+        `);
+
         const systemStats = {
-            database: dbStats,
+            database: {
+                ...dbStats,
+                ...additionalStats.rows[0]
+            },
             system: {
                 node_version: process.version,
                 uptime: process.uptime(),
@@ -358,6 +397,7 @@ router.get('/stats', requireAuth, requireRole(['admin']), async (req, res) => {
                 platform: process.platform,
                 arch: process.arch
             },
+            additional: additionalStats.rows[0],
             timestamp: new Date()
         };
 
@@ -366,6 +406,59 @@ router.get('/stats', requireAuth, requireRole(['admin']), async (req, res) => {
     } catch (err) {
         console.error('Ошибка получения статистики:', err);
         res.status(500).json({ error: 'Ошибка сервера' });
+    }
+});
+
+// Очистка данных
+router.post('/cleanup', requireAuth, requireRole(['admin']), async (req, res) => {
+    try {
+        const { cleanupType } = req.body;
+
+        if (!cleanupType) {
+            return res.status(400).json({ error: 'Требуется указать тип очистки' });
+        }
+
+        const cleaned = {};
+
+        switch (cleanupType) {
+            case 'expired_sessions':
+                const expiredSessions = await query('DELETE FROM user_sessions WHERE expires_at < CURRENT_TIMESTAMP');
+                cleaned.expired_sessions = expiredSessions.rowCount;
+                break;
+
+            case 'old_scans':
+                const oldScans = await query('DELETE FROM scans WHERE scan_date < CURRENT_DATE - INTERVAL \'90 days\'');
+                cleaned.old_scans = oldScans.rowCount;
+                break;
+
+            case 'old_history':
+                // Пример очистки старых записей (если есть таблица истории)
+                cleaned.old_history = 0;
+                break;
+
+            case 'all':
+                const expiredSessionsAll = await query('DELETE FROM user_sessions WHERE expires_at < CURRENT_TIMESTAMP');
+                const oldScansAll = await query('DELETE FROM scans WHERE scan_date < CURRENT_DATE - INTERVAL \'90 days\'');
+
+                cleaned.expired_sessions = expiredSessionsAll.rowCount;
+                cleaned.old_scans = oldScansAll.rowCount;
+                cleaned.old_history = 0;
+                break;
+
+            default:
+                return res.status(400).json({ error: 'Неподдерживаемый тип очистки' });
+        }
+
+        res.json({
+            message: 'Очистка выполнена успешно',
+            cleanupType,
+            cleaned,
+            timestamp: new Date()
+        });
+
+    } catch (err) {
+        console.error('Ошибка очистки данных:', err);
+        res.status(500).json({ error: 'Ошибка сервера при очистке данных' });
     }
 });
 
@@ -383,30 +476,30 @@ router.get('/activity-logs', requireAuth, requireRole(['admin']), async (req, re
                 u.username, u.full_name,
                 v.last_name, v.first_name, v.middle_name
             FROM scans s
-            LEFT JOIN users u ON s.scanned_by = u.id
-            LEFT JOIN visitors v ON s.visitor_id = v.id
+                     LEFT JOIN users u ON s.scanned_by = u.id
+                     LEFT JOIN visitors v ON s.visitor_id = v.id
         `;
 
         const conditions = [];
         const params = [];
 
         if (user_id) {
-            conditions.push(`s.scanned_by = $${params.length + 1}`);
+            conditions.push(`s.scanned_by = ${params.length + 1}`);
             params.push(user_id);
         }
 
         if (action_type) {
-            conditions.push(`s.scan_type = $${params.length + 1}`);
+            conditions.push(`s.scan_type = ${params.length + 1}`);
             params.push(action_type);
         }
 
         if (date_from) {
-            conditions.push(`s.scan_date >= $${params.length + 1}`);
+            conditions.push(`s.scan_date >= ${params.length + 1}`);
             params.push(date_from);
         }
 
         if (date_to) {
-            conditions.push(`s.scan_date <= $${params.length + 1}`);
+            conditions.push(`s.scan_date <= ${params.length + 1}`);
             params.push(date_to);
         }
 
@@ -416,7 +509,7 @@ router.get('/activity-logs', requireAuth, requireRole(['admin']), async (req, re
 
         queryText += `
             ORDER BY s.scanned_at DESC
-            LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+            LIMIT ${params.length + 1} OFFSET ${params.length + 2}
         `;
 
         params.push(limit, offset);
@@ -467,7 +560,7 @@ router.get('/export/:type', requireAuth, requireRole(['admin']), async (req, res
                 const visitorsResult = await query(`
                     SELECT v.*, u.username as created_by_username
                     FROM visitors v
-                    LEFT JOIN users u ON v.created_by = u.id
+                             LEFT JOIN users u ON v.created_by = u.id
                     ORDER BY v.created_at DESC
                 `);
                 data = visitorsResult.rows;
@@ -479,8 +572,8 @@ router.get('/export/:type', requireAuth, requireRole(['admin']), async (req, res
                     SELECT s.*, u.username as scanned_by_username,
                            v.last_name, v.first_name, v.middle_name
                     FROM scans s
-                    LEFT JOIN users u ON s.scanned_by = u.id
-                    LEFT JOIN visitors v ON s.visitor_id = v.id
+                             LEFT JOIN users u ON s.scanned_by = u.id
+                             LEFT JOIN visitors v ON s.visitor_id = v.id
                     ORDER BY s.scanned_at DESC
                 `);
                 data = scansResult.rows;

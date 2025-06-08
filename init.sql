@@ -137,11 +137,11 @@ SELECT
 FROM scans;
 
 -- Вставка администратора по умолчанию
--- Пароль: admin123 (обязательно смените в production!)
+-- Пароль: admin123
 INSERT INTO users (username, password_hash, full_name, role, email, is_active)
 VALUES (
            'admin',
-           '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj6B8w1L3LcK', -- admin123
+           '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/lewdBPj6B8w1L3LcK', -- admin123
            'Системный администратор',
            'admin',
            'admin@example.com',
@@ -153,7 +153,7 @@ VALUES (
 INSERT INTO users (username, password_hash, full_name, role, email, is_active, created_by)
 VALUES (
            'moderator',
-           '$2a$12$9.1k1mB5BF0T9yYcC0.1JeDcZlZw4lrEJy1kgWqLqZXx1/G.S1L9K', -- moderator123
+           '$2b$12$9.1k1mB5BF0T9yYcC0.1JeDcZlZw4lrEJy1kgWqLqZXx1/G.S1L9K', -- moderator123
            'Тестовый модератор',
            'moderator',
            'moderator@example.com',
@@ -166,7 +166,7 @@ VALUES (
 INSERT INTO users (username, password_hash, full_name, role, email, is_active, created_by)
 VALUES (
            'skd_user',
-           '$2a$12$YQl8fJ0h9mTlN6pA8vE1OOH5zF0H4GtW2xJ6Y8L9vE5J3k9B7yN2M', -- skd123
+           '$2b$12$YQl8fJ0h9mTlN6pA8vE1OOH5zF0H4GtW2xJ6Y8L9vE5J3k9B7yN2M', -- skd123
            'Сотрудник СКД',
            'skd',
            'skd@example.com',

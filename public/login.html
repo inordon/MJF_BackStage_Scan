@@ -177,33 +177,6 @@
             font-size: 14px;
         }
 
-        .demo-credentials {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 20px;
-            font-size: 14px;
-            border: 1px solid #e9ecef;
-        }
-
-        .demo-credentials h4 {
-            margin-bottom: 10px;
-            color: #333;
-        }
-
-        .demo-credentials .credential-item {
-            margin-bottom: 8px;
-            font-family: monospace;
-            background: white;
-            padding: 5px 8px;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-
-        .demo-credentials .credential-item:hover {
-            background: #e9ecef;
-        }
-
         @media (max-width: 480px) {
             .login-container {
                 padding: 30px 25px;
@@ -230,18 +203,7 @@
 
     <div id="alert-container"></div>
 
-    <div class="demo-credentials">
-        <h4>Демо аккаунты:</h4>
-        <div class="credential-item" onclick="fillCredentials('admin', 'admin123')">
-            👑 Администратор: admin / admin123
-        </div>
-        <div class="credential-item" onclick="fillCredentials('moderator', 'mod123')">
-            ⚙️ Модератор: moderator / mod123
-        </div>
-        <div class="credential-item" onclick="fillCredentials('security', 'skd123')">
-            🔒 СКД: security / skd123
-        </div>
-    </div>
+
 
     <form id="login-form">
         <div class="form-group">
@@ -339,7 +301,7 @@
         }
     });
 
-    // Заполнение демо данных
+    // Заполнение демо данных (функция оставлена для совместимости, но не используется)
     function fillCredentials(username, password) {
         document.getElementById('username').value = username;
         document.getElementById('password').value = password;
