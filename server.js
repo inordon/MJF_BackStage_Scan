@@ -27,7 +27,7 @@ if (!fs.existsSync(path.join(uploadDir, 'qr-codes'))) {
     fs.mkdirSync(path.join(uploadDir, 'qr-codes'), { recursive: true });
 }
 
-// Настройка безопасности с исправленным CSP
+// Настройка безопасности с исправленной CSP политикой
 app.use(helmet({
     contentSecurityPolicy: {
         directives: {
@@ -35,13 +35,14 @@ app.use(helmet({
             styleSrc: ["'self'", "'unsafe-inline'"],
             scriptSrc: [
                 "'self'",
-                "'unsafe-inline'", // Разрешаем inline скрипты для onclick
-                "'unsafe-eval'",   // Разрешаем eval для динамических функций
-                "https://cdnjs.cloudflare.com"
+                "'unsafe-inline'",
+                "'unsafe-eval'",
+                "https://cdnjs.cloudflare.com",
+                "https://unpkg.com" // Добавляем запасной CDN
             ],
-            scriptSrcAttr: ["'unsafe-inline'"], // Разрешаем onclick обработчики
+            scriptSrcAttr: ["'unsafe-inline'"], // Разрешаем onclick
             imgSrc: ["'self'", "data:", "blob:"],
-            mediaSrc: ["'self'"],
+            mediaSrc: ["'self'", "blob:"],
             connectSrc: ["'self'"],
             fontSrc: ["'self'"],
             objectSrc: ["'none'"],
@@ -50,7 +51,7 @@ app.use(helmet({
             formAction: ["'self'"],
         },
     },
-    crossOriginEmbedderPolicy: false, // Отключаем для совместимости
+    crossOriginEmbedderPolicy: false,
 }));
 
 // Rate limiting

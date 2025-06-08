@@ -1,432 +1,54 @@
-// Функции управления пользователями
-
-// Показ формы создания пользователя
-function showCreateUserForm() {
-document.getElementById('create-user-form').classList.remove('hidden');
-document.getElementById('new-username').focus();
-}
-
-// Скрытие формы создания пользователя
-function hideCreateUserForm() {
-document.getElementById('create-user-form').classList.add('hidden');
-document.getElementById('user-creation-form').reset();
-}
-
-// Создание нового пользователя
-async function createUser(form) {
-const formData = new FormData(form);
-const submitBtn = form.querySelector('button[type="submit"]');
-
-submitBtn.disabled = true;
-submitBtn.innerHTML = '<span class="loading"></span> Создание...';
-
-try {
-const userData = {
-username: formData.get('username'),
-password: formData.get('password'),
-role: formData.get('role'),
-fullName: formData.get('fullName'),
-email: formData.get('email') || null
-};
-
-const response = await fetch('/api/admin/users', {
-method: 'POST',
-headers: {
-'Content-Type': 'application/json',
-},
-body: JSON.stringify(userData)
-});
-
-const data = await response.json();
-
-if (!response.ok) {
-throw new Error(data.error || 'Ошибка создания пользователя');
-}
-
-showAlert('success', `Пользователь ${data.user.username} успешно создан`);
-hideCreateUserForm();
-loadAdminPanel(); // Перезагружаем список пользователей
-} catch (err) {
-console.error('Ошибка создания пользователя:', err);
-showAlert('error', err.message);
-} finally {
-submitBtn.disabled = false;
-submitBtn.innerHTML = '✅ Создать пользователя';
-}
-}
-
-// Показ формы сброса пароля
-function showPasswordResetForm(userId, fullName) {
-document.getElementById('reset-user-id').value = userId;
-document.getElementById('reset-password-form').classList.remove('hidden');
-document.querySelector('#reset-password-form h4').textContent = `Сброс пароля для: ${fullName}`;
-document.getElementById('reset-new-password').focus();
-}
-
-// Скрытие формы сброса пароля
-function hidePasswordResetForm() {
-document.getElementById('reset-password-form').classList.add('hidden');
-document.getElementById('password-reset-form').reset();
-}
-
-// Сброс пароля пользователя
-async function resetUserPassword(form) {
-const formData = new FormData(form);
-const userId = document.getElementById('reset-user-id').value;
-const newPassword = formData.get('newPassword');
-const confirmPassword = document.getElementById('reset-confirm-password').value;
-
-if (newPassword !== confirmPassword) {
-showAlert('error', 'Пароли не совпадают');
-return;
-}
-
-const submitBtn = form.querySelector('button[type="submit"]');
-submitBtn.disabled = true;
-submitBtn.innerHTML = '<span class="loading"></span> Сброс...';
-
-try {
-const response = await fetch(`/api/admin/users/${userId}/reset-password`, {
-method: 'POST',
-headers: {
-'Content-Type': 'application/json',
-},
-body: JSON.stringify({ newPassword })
-});
-
-const data = await response.json();
-
-if (!response.ok) {
-throw new Error(data.error || 'Ошибка сброса пароля');
-}
-
-showAlert('success', data.message);
-hidePasswordResetForm();
-loadAdminPanel(); // Перезагружаем список
-} catch (err) {
-console.error('Ошибка сброса пароля:', err);
-showAlert('error', err.message);
-} finally {
-submitBtn.disabled = false;
-submitBtn.innerHTML = '🔑 Сбросить пароль';
-}
-}
-
-// Изменение статуса пользователя
-async function toggleUserStatus(userId, isActive, fullName) {
-const newStatus = !isActive;
-const action = newStatus ? 'разблокировать' : 'заблокировать';
-
-if (!confirm(`Вы уверены, что хотите ${action} пользователя "${fullName}"?`)) {
-return;
-}
-
-try {
-const response = await fetch(`/api/admin/users/${userId}`, {
-method: 'PUT',
-headers: {
-'Content-Type': 'application/json',
-},
-body: JSON.stringify({ isActive: newStatus })
-});
-
-const data = await response.json();
-
-if (!response.ok) {
-throw new Error(data.error || 'Ошибка изменения статуса');
-}
-
-showAlert('success', `Пользователь "${fullName}" ${newStatus ? 'разблокирован' : 'заблокирован'}`);
-loadAdminPanel();
-} catch (err) {
-console.error('Ошибка изменения статуса:', err);
-showAlert('error', err.message);
-}
-}
-
-// Удаление пользователя
-async function deleteUser(userId, fullName) {
-if (!confirm(`Вы уверены, что хотите удалить пользователя "${fullName}"?\n\nЭто действие нельзя отменить!`)) {
-return;
-}
-
-// Дополнительное подтверждение
-const confirmation = prompt(`Для подтверждения удаления введите "УДАЛИТЬ":`);
-if (confirmation !== 'УДАЛИТЬ') {
-showAlert('info', 'Удаление отменено');
-return;
-}
-
-try {
-const response = await fetch(`/api/admin/users/${userId}`, {
-method: 'DELETE'
-});
-
-const data = await response.json();
-
-if (!response.ok) {
-throw new Error(data.error || 'Ошибка удаления пользователя');
-}
-
-showAlert('success', data.message);
-loadAdminPanel();
-} catch (err) {
-console.error('Ошибка удаления пользователя:', err);
-showAlert('error', err.message);
-}
-}
-
-// Показ сессий пользователя
-async function showUserSessions(userId, username) {
-try {
-const response = await fetch(`/api/admin/users/${userId}/sessions`);
-const data = await response.json();
-
-if (!response.ok) {
-throw new Error(data.error || 'Ошибка получения сессий');
-}
-
-let sessionsHtml = `
-<div style="background: white; padding: 20px; border-radius: 12px; border: 2px solid #e9ecef; margin-top: 20px;">
-    <h4>Активные сессии пользователя: ${username}</h4>
-    `;
-
-    if (data.sessions.length === 0) {
-    sessionsHtml += '<p>Нет активных сессий</p>';
-    } else {
-    sessionsHtml += `
-    <div style="margin-top: 15px;">
-        ${data.sessions.map(session => `
-        <div class="visitor-card" style="margin-bottom: 10px;">
-            <div class="visitor-info">
-                <div><strong>Создана:</strong> ${new Date(session.createdAt).toLocaleString('ru-RU')}</div>
-                <div><strong>Истекает:</strong> ${new Date(session.expiresAt).toLocaleString('ru-RU')}</div>
-                <div><strong>IP адрес:</strong> ${session.ipAddress}</div>
-                <div><strong>Браузер:</strong> ${session.userAgent.substring(0, 100)}...</div>
-                ${session.isCurrent ? '<div style="color: #28a745; font-weight: bold;">🟢 Текущая сессия</div>' : ''}
-            </div>
-            ${!session.isCurrent ? `
-            <div class="visitor-actions">
-                <button onclick="terminateSession('${session.id}', '${username}')" class="btn-danger">🔌 Завершить сессию</button>
-            </div>
-            ` : ''}
-        </div>
-        `).join('')}
-    </div>
-    `;
-    }
-
-    sessionsHtml += `
-    <div style="margin-top: 15px;">
-        <button onclick="closeSessions()" class="btn-secondary">❌ Закрыть</button>
-        <button onclick="terminateAllUserSessions(${userId}, '${username}')" class="btn-danger">🚪 Завершить все сессии</button>
-    </div>
-</div>
-`;
-
-// Добавляем блок сессий в DOM
-let sessionsContainer = document.getElementById('user-sessions-container');
-if (!sessionsContainer) {
-sessionsContainer = document.createElement('div');
-sessionsContainer.id = 'user-sessions-container';
-document.getElementById('users-management').appendChild(sessionsContainer);
-}
-sessionsContainer.innerHTML = sessionsHtml;
-
-} catch (err) {
-console.error('Ошибка получения сессий:', err);
-showAlert('error', 'Ошибка получения информации о сессиях');
-}
-}
-
-// Завершение конкретной сессии
-async function terminateSession(sessionId, username) {
-if (!confirm(`Завершить сессию пользователя ${username}?`)) {
-return;
-}
-
-try {
-const response = await fetch(`/api/auth/sessions/${sessionId}`, {
-method: 'DELETE'
-});
-
-const data = await response.json();
-
-if (!response.ok) {
-throw new Error(data.error || 'Ошибка завершения сессии');
-}
-
-showAlert('success', 'Сессия завершена');
-// Перезагружаем информацию о сессиях
-const userId = document.getElementById('reset-user-id').value;
-showUserSessions(userId, username);
-} catch (err) {
-console.error('Ошибка завершения сессии:', err);
-showAlert('error', err.message);
-}
-}
-
-// Завершение всех сессий пользователя
-async function terminateAllUserSessions(userId, username) {
-if (!confirm(`Завершить ВСЕ сессии пользователя ${username}?\n\nПользователь будет отключен от всех устройств.`)) {
-return;
-}
-
-try {
-const response = await fetch(`/api/admin/users/${userId}/terminate-sessions`, {
-method: 'POST'
-});
-
-const data = await response.json();
-
-if (!response.ok) {
-throw new Error(data.error || 'Ошибка завершения сессий');
-}
-
-showAlert('success', `Все сессии пользователя ${username} завершены`);
-closeSessions();
-loadAdminPanel();
-} catch (err) {
-console.error('Ошибка завершения сессий:', err);
-showAlert('error', err.message);
-}
-}
-
-// Закрытие блока сессий
-function closeSessions() {
-const container = document.getElementById('user-sessions-container');
-if (container) {
-container.remove();
-}
-}
-
-// Загрузка системной статистики
-async function loadSystemStats() {
-const container = document.getElementById('system-stats');
-const content = document.getElementById('system-stats-content');
-
-container.classList.remove('hidden');
-content.innerHTML = 'Загрузка...';
-
-try {
-const response = await fetch('/api/admin/stats');
-const data = await response.json();
-
-if (!response.ok) {
-throw new Error(data.error || 'Ошибка получения статистики');
-}
-
-content.innerHTML = `
-<div class="stats-grid">
-    <div class="detail-item">
-        <div class="detail-label">Активные посетители</div>
-        <div class="detail-value">${data.database.active_visitors}</div>
-    </div>
-    <div class="detail-item">
-        <div class="detail-label">Заблокированные посетители</div>
-        <div class="detail-value">${data.database.blocked_visitors}</div>
-    </div>
-    <div class="detail-item">
-        <div class="detail-label">Активные пользователи</div>
-        <div class="detail-value">${data.database.active_users}</div>
-    </div>
-    <div class="detail-item">
-        <div class="detail-label">Активные сессии</div>
-        <div class="detail-value">${data.database.active_sessions}</div>
-    </div>
-    <div class="detail-item">
-        <div class="detail-label">Сканирований сегодня</div>
-        <div class="detail-value">${data.database.today_scans}</div>
-    </div>
-    <div class="detail-item">
-        <div class="detail-label">Изменений за неделю</div>
-        <div class="detail-value">${data.additional.recent_changes || 0}</div>
-    </div>
-</div>
-<div style="margin-top: 15px; padding: 15px; background: #e9ecef; border-radius: 8px;">
-    <strong>Последнее обновление:</strong> ${new Date(data.timestamp).toLocaleString('ru-RU')}
-</div>
-`;
-} catch (err) {
-console.error('Ошибка загрузки статистики:', err);
-content.innerHTML = '<div class="alert alert-error">Ошибка загрузки статистики</div>';
-}
-}
-
-// Показ опций очистки
-function showCleanupOptions() {
-const options = [
-{ value: 'expired_sessions', label: 'Истекшие сессии' },
-{ value: 'old_scans', label: 'Старые сканирования (>90 дней)' },
-{ value: 'old_history', label: 'Старая история изменений (>365 дней)' },
-{ value: 'all', label: 'Все вышеперечисленное' }
-];
-
-const optionsHtml = options.map(opt =>
-`<button onclick="performCleanup('${opt.value}')" class="btn-secondary" style="margin: 5px; width: 100%;">${opt.label}</button>`
-).join('');
-
-if (confirm('Выберите тип очистки данных:\n\n' + options.map(opt => `- ${opt.label}`).join('\n'))) {
-const cleanupContainer = document.createElement('div');
-cleanupContainer.innerHTML = `
-<div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-                                background: white; padding: 30px; border-radius: 12px; box-shadow: 0 20px 40px rgba(0,0,0,0.3);
-                                z-index: 1000; min-width: 300px;">
-    <h4 style="margin-bottom: 20px;">Очистка данных</h4>
-    <div style="margin-bottom: 20px;">
-        ${optionsHtml}
-    </div>
-    <button onclick="this.parentElement.parentElement.remove()" class="btn-danger" style="width: 100%;">❌ Отмена</button>
-</div>
-<div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 999;"
-     onclick="this.parentElement.remove()"></div>
-`;
-document.body.appendChild(cleanupContainer);
-}
-}
-
-// Выполнение очистки
-async function performCleanup(cleanupType) {
-if (!confirm(`Вы уверены, что хотите выполнить очистку?\n\nТип: ${cleanupType}\n\nЭто действие нельзя отменить!`)) {
-return;
-}
-
-try {
-const response = await fetch('/api/admin/cleanup', {
-method: 'POST',
-headers: {
-'Content-Type': 'application/json',
-},
-body: JSON.stringify({ cleanupType })
-});
-
-const data = await response.json();
-
-if (!response.ok) {
-throw new Error(data.error || 'Ошибка очистки');
-}
-
-const results = Object.entries(data.cleaned).map(([key, count]) => `${key}: ${count} записей`).join('\n');
-showAlert('success', `Очистка выполнена успешно:\n${results}`);
-
-// Закрываем модальное окно
-const modal = document.querySelector('div[style*="position: fixed"]')?.parentElement;
-if (modal) modal.remove();
-
-// Обновляем статистику
-loadSystemStats();
-} catch (err) {
-console.error('Ошибка очистки:', err);
-showAlert('error', err.message);
-}
-}<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Система управления посетителями</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.3/qrcode.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qr-scanner/1.4.2/qr-scanner.umd.min.js"></script>
+    <!-- Загружаем библиотеки с fallback'ом -->
+    <script>
+        // Fallback для QRCode если основной CDN недоступен
+        function loadQRCode() {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.onload = resolve;
+                script.onerror = () => {
+                    // Пробуем альтернативный CDN
+                    const fallbackScript = document.createElement('script');
+                    fallbackScript.onload = resolve;
+                    fallbackScript.onerror = reject;
+                    fallbackScript.src = 'https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js';
+                    document.head.appendChild(fallbackScript);
+                };
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.3/qrcode.min.js';
+                document.head.appendChild(script);
+            });
+        }
+
+        // Fallback для QR Scanner
+        function loadQRScanner() {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.onload = resolve;
+                script.onerror = () => {
+                    console.warn('QR Scanner недоступен, будет использована альтернатива');
+                    resolve(); // Продолжаем работу без сканера
+                };
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/qr-scanner/1.4.2/qr-scanner.umd.min.js';
+                document.head.appendChild(script);
+            });
+        }
+
+        // Загружаем библиотеки при загрузке страницы
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                await Promise.all([loadQRCode(), loadQRScanner()]);
+                console.log('Библиотеки загружены успешно');
+            } catch (err) {
+                console.error('Ошибка загрузки библиотек:', err);
+                showAlert('warning', 'Некоторые функции могут быть недоступны');
+            }
+        });
+    </script>
     <style>
         * {
             margin: 0;
@@ -754,6 +376,12 @@ showAlert('error', err.message);
             border: 1px solid #f5c6cb;
         }
 
+        .alert-warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
         .alert-info {
             background: #d1ecf1;
             color: #0c5460;
@@ -814,6 +442,26 @@ showAlert('error', err.message);
             opacity: 0.9;
         }
 
+        .detail-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            margin-bottom: 10px;
+        }
+
+        .detail-label {
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+
+        .detail-value {
+            color: #666;
+            font-size: 16px;
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 20px;
@@ -851,26 +499,26 @@ showAlert('error', err.message);
         <h1>👥 Система управления посетителями</h1>
         <div class="user-info">
             <div class="user-badge" id="user-badge">Загрузка...</div>
-            <button class="logout-btn" onclick="logout()">🚪 Выйти</button>
+            <button class="logout-btn" id="logout-btn">🚪 Выйти</button>
         </div>
     </div>
 
     <div class="tab-container">
-        <button class="tab active" onclick="showTab('visitors')" id="tab-visitors">📋 Посетители</button>
-        <button class="tab" onclick="showTab('add-visitor')" id="tab-add-visitor">➕ Добавить</button>
-        <button class="tab" onclick="showTab('scanner')" id="tab-scanner">📱 Сканер</button>
-        <button class="tab" onclick="showTab('stats')" id="tab-stats">📊 Статистика</button>
-        <button class="tab" onclick="showTab('admin')" id="tab-admin" disabled>⚙️ Администрирование</button>
+        <button class="tab active" id="tab-visitors" data-tab="visitors">📋 Посетители</button>
+        <button class="tab" id="tab-add-visitor" data-tab="add-visitor">➕ Добавить</button>
+        <button class="tab" id="tab-scanner" data-tab="scanner">📱 Сканер</button>
+        <button class="tab" id="tab-stats" data-tab="stats">📊 Статистика</button>
+        <button class="tab" id="tab-admin" data-tab="admin" disabled>⚙️ Администрирование</button>
     </div>
 
     <!-- Список посетителей -->
     <div id="visitors" class="content active">
         <div class="form-row" style="margin-bottom: 20px;">
             <div class="form-group">
-                <input type="text" id="search-input" placeholder="Поиск по ФИО или ответственному..." onkeyup="searchVisitors()">
+                <input type="text" id="search-input" placeholder="Поиск по ФИО или ответственному...">
             </div>
             <div class="form-group">
-                <select id="status-filter" onchange="filterVisitors()">
+                <select id="status-filter">
                     <option value="">Все статусы</option>
                     <option value="active">Активные</option>
                     <option value="blocked">Заблокированные</option>
@@ -895,19 +543,8 @@ showAlert('error', err.message);
                     <input type="text" id="first-name" name="firstName" required>
                 </div>
                 <div class="form-group">
-                    <label for="middle-name">Отчество <span class="required">*</span></label>
-                    <input type="text" id="middle-name" name="middleName" required>
-                </div>
-            </div>
-
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="birth-date">Дата рождения</label>
-                    <input type="date" id="birth-date" name="birthDate">
-                </div>
-                <div class="form-group">
-                    <label for="responsible">Ответственный <span class="required">*</span></label>
-                    <input type="text" id="responsible" name="responsible" required>
+                    <label for="middle-name">Отчество</label>
+                    <input type="text" id="middle-name" name="middleName">
                 </div>
             </div>
 
@@ -918,7 +555,7 @@ showAlert('error', err.message);
 
             <div class="form-group">
                 <label for="visitor-photo">Фотография</label>
-                <input type="file" id="visitor-photo" name="photo" accept="image/*" onchange="previewPhoto()">
+                <input type="file" id="visitor-photo" name="photo" accept="image/*">
                 <img id="photo-preview" class="photo-preview hidden" alt="Предпросмотр">
             </div>
 
@@ -929,8 +566,8 @@ showAlert('error', err.message);
             <div class="qr-container">
                 <div id="qrcode"></div>
                 <p style="margin-top: 15px; font-weight: 600;">QR-код для посетителя</p>
-                <button onclick="downloadQR()" class="btn-secondary">📥 Скачать QR</button>
-                <button onclick="resetForm()" class="btn-secondary">➕ Добавить еще</button>
+                <button type="button" id="download-qr-btn" class="btn-secondary">📥 Скачать QR</button>
+                <button type="button" id="reset-form-btn" class="btn-secondary">➕ Добавить еще</button>
             </div>
         </div>
     </div>
@@ -940,8 +577,8 @@ showAlert('error', err.message);
         <div class="scanner-container">
             <video id="qr-video" class="hidden"></video>
         </div>
-        <button onclick="startScanner()" id="start-scanner-btn">📹 Запустить сканер</button>
-        <button onclick="stopScanner()" class="hidden" id="stop-scanner-btn">⏹️ Остановить</button>
+        <button id="start-scanner-btn">📹 Запустить сканер</button>
+        <button class="hidden" id="stop-scanner-btn">⏹️ Остановить</button>
 
         <div id="scan-result" class="hidden">
             <h3>Результат сканирования:</h3>
@@ -968,13 +605,47 @@ showAlert('error', err.message);
     let currentPage = 1;
     let totalPages = 1;
     let qrScanner = null;
+    let searchTimeout = null;
 
     // Инициализация при загрузке
     document.addEventListener('DOMContentLoaded', async () => {
+        setupEventListeners();
         await checkAuth();
         await loadVisitors();
         await loadStats();
     });
+
+    // Настройка обработчиков событий
+    function setupEventListeners() {
+        // Обработчики вкладок
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                const tabName = e.target.dataset.tab;
+                if (tabName) showTab(tabName);
+            });
+        });
+
+        // Обработчик кнопки выхода
+        document.getElementById('logout-btn').addEventListener('click', logout);
+
+        // Обработчики поиска и фильтрации
+        document.getElementById('search-input').addEventListener('keyup', searchVisitors);
+        document.getElementById('status-filter').addEventListener('change', filterVisitors);
+
+        // Обработчик формы посетителя
+        document.getElementById('visitor-form').addEventListener('submit', handleVisitorFormSubmit);
+
+        // Обработчик предпросмотра фото
+        document.getElementById('visitor-photo').addEventListener('change', previewPhoto);
+
+        // Обработчики кнопок QR
+        document.getElementById('download-qr-btn').addEventListener('click', downloadQR);
+        document.getElementById('reset-form-btn').addEventListener('click', resetForm);
+
+        // Обработчики сканера
+        document.getElementById('start-scanner-btn').addEventListener('click', startScanner);
+        document.getElementById('stop-scanner-btn').addEventListener('click', stopScanner);
+    }
 
     // Проверка авторизации
     async function checkAuth() {
@@ -1003,12 +674,14 @@ showAlert('error', err.message);
         // Настройка доступности вкладок
         const tabAddVisitor = document.getElementById('tab-add-visitor');
         const tabAdmin = document.getElementById('tab-admin');
+        const tabVisitors = document.getElementById('tab-visitors');
+        const tabStats = document.getElementById('tab-stats');
 
         if (currentUser.role === 'skd') {
             // СКД только сканирование
             tabAddVisitor.disabled = true;
-            document.getElementById('tab-visitors').disabled = true;
-            document.getElementById('tab-stats').disabled = true;
+            tabVisitors.disabled = true;
+            tabStats.disabled = true;
             showTab('scanner');
         } else if (currentUser.role === 'admin') {
             // Админ - полный доступ
@@ -1037,7 +710,7 @@ showAlert('error', err.message);
 
         // Показать выбранную вкладку
         document.getElementById(tabName).classList.add('active');
-        event.target.classList.add('active');
+        document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
 
         // Загрузить данные для вкладки
         if (tabName === 'visitors') {
@@ -1046,6 +719,89 @@ showAlert('error', err.message);
             loadStats();
         } else if (tabName === 'admin') {
             loadAdminPanel();
+        }
+    }
+
+    // Поиск посетителей
+    function searchVisitors() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+            loadVisitors(1);
+        }, 500);
+    }
+
+    // Фильтрация посетителей
+    function filterVisitors() {
+        loadVisitors(1);
+    }
+
+    // Предпросмотр фото
+    function previewPhoto() {
+        const file = document.getElementById('visitor-photo').files[0];
+        const preview = document.getElementById('photo-preview');
+
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                preview.src = e.target.result;
+                preview.classList.remove('hidden');
+            };
+            reader.readAsDataURL(file);
+        } else {
+            preview.classList.add('hidden');
+        }
+    }
+
+    // Обработка формы добавления посетителя
+    async function handleVisitorFormSubmit(e) {
+        e.preventDefault();
+
+        const formData = new FormData(e.target);
+        const submitBtn = e.target.querySelector('button[type="submit"]');
+
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="loading"></span> Создание...';
+
+        try {
+            const response = await fetch('/api/visitors', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error);
+            }
+
+            // Генерируем QR код для отображения
+            const qrUrl = `${window.location.origin}/scan/${data.visitor.visitor_uuid}`;
+
+            if (typeof QRCode !== 'undefined') {
+                document.getElementById('qrcode').innerHTML = '';
+                QRCode.toCanvas(document.getElementById('qrcode'), qrUrl, {
+                    width: 200,
+                    margin: 2
+                });
+            } else {
+                // Fallback если QRCode не загружен
+                document.getElementById('qrcode').innerHTML =
+                    `<div style="padding: 20px; background: #f8f9fa; border-radius: 8px;">
+                        <p>QR-код создан</p>
+                        <p style="font-size: 12px; margin-top: 10px; word-break: break-all;">${qrUrl}</p>
+                    </div>`;
+            }
+
+            document.getElementById('visitor-result').classList.remove('hidden');
+            document.getElementById('visitor-form').style.display = 'none';
+
+            showAlert('success', 'Посетитель успешно создан');
+        } catch (err) {
+            console.error('Ошибка создания посетителя:', err);
+            showAlert('error', err.message || 'Ошибка создания посетителя');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = 'Создать посетителя и QR-код';
         }
     }
 
@@ -1091,31 +847,55 @@ showAlert('error', err.message);
         }
 
         container.innerHTML = visitors.map(visitor => `
-                <div class="visitor-card">
-                    <div class="visitor-header">
-                        <div class="visitor-name">${visitor.last_name} ${visitor.first_name} ${visitor.middle_name}</div>
-                        <div class="status-badge status-${visitor.status}">
-                            ${visitor.status === 'active' ? 'Активен' : 'Заблокирован'}
-                        </div>
-                    </div>
-                    <div class="visitor-info">
-                        <div><strong>Ответственный:</strong> ${visitor.responsible}</div>
-                        ${visitor.birth_date ? `<div><strong>Дата рождения:</strong> ${new Date(visitor.birth_date).toLocaleDateString('ru-RU')}</div>` : ''}
-                        ${visitor.comment ? `<div><strong>Комментарий:</strong> ${visitor.comment}</div>` : ''}
-                        <div><strong>Создан:</strong> ${new Date(visitor.created_at).toLocaleString('ru-RU')} (${visitor.created_by_name || 'Неизвестно'})</div>
-                        <div><strong>Сканирований:</strong> ${visitor.total_scans} (сегодня: ${visitor.first_scan_today ? '1+' : '0'})</div>
-                    </div>
-                    <div class="visitor-actions">
-                        <button onclick="downloadVisitorQR(${visitor.id})" class="btn-secondary">📥 QR-код</button>
-                        <button onclick="toggleVisitorStatus(${visitor.id}, '${visitor.status}')"
-                                class="${visitor.status === 'active' ? 'btn-danger' : 'btn-success'}">
-                            ${visitor.status === 'active' ? '🔒 Заблокировать' : '🔓 Разблокировать'}
-                        </button>
-                        <button onclick="editVisitor(${visitor.id})" class="btn-secondary">✏️ Редактировать</button>
-                        ${currentUser.role === 'admin' ? `<button onclick="deleteVisitor(${visitor.id})" class="btn-danger">🗑️ Удалить</button>` : ''}
+            <div class="visitor-card">
+                <div class="visitor-header">
+                    <div class="visitor-name">${visitor.last_name} ${visitor.first_name} ${visitor.middle_name || ''}</div>
+                    <div class="status-badge status-${visitor.status}">
+                        ${visitor.status === 'active' ? 'Активен' : 'Заблокирован'}
                     </div>
                 </div>
-            `).join('');
+                <div class="visitor-info">
+                    ${visitor.comment ? `<div><strong>Комментарий:</strong> ${visitor.comment}</div>` : ''}
+                    <div><strong>Создан:</strong> ${new Date(visitor.created_at).toLocaleString('ru-RU')} ${visitor.created_by_name ? `(${visitor.created_by_name})` : ''}</div>
+                    <div><strong>Сканирований:</strong> ${visitor.total_scans} (сегодня: ${visitor.first_scan_today ? '1+' : '0'})</div>
+                </div>
+                <div class="visitor-actions">
+                    <button class="btn-secondary" data-action="download-qr" data-visitor-id="${visitor.id}">📥 QR-код</button>
+                    <button class="${visitor.status === 'active' ? 'btn-danger' : 'btn-success'}"
+                            data-action="toggle-status" data-visitor-id="${visitor.id}" data-status="${visitor.status}">
+                        ${visitor.status === 'active' ? '🔒 Заблокировать' : '🔓 Разблокировать'}
+                    </button>
+                    ${currentUser.role === 'admin' ?
+            `<button class="btn-danger" data-action="delete" data-visitor-id="${visitor.id}">🗑️ Удалить</button>` :
+            ''
+        }
+                </div>
+            </div>
+        `).join('');
+
+        // Добавляем обработчики событий для кнопок действий
+        container.addEventListener('click', handleVisitorAction);
+    }
+
+    // Обработчик действий с посетителями
+    async function handleVisitorAction(e) {
+        const action = e.target.dataset.action;
+        const visitorId = e.target.dataset.visitorId;
+
+        if (!action || !visitorId) return;
+
+        switch (action) {
+            case 'download-qr':
+                await downloadVisitorQR(visitorId);
+                break;
+            case 'toggle-status':
+                const currentStatus = e.target.dataset.status;
+                await toggleVisitorStatus(visitorId, currentStatus);
+                break;
+            case 'delete':
+                await deleteVisitor(visitorId);
+                break;
+        }
     }
 
     // Отрисовка пагинации
@@ -1130,109 +910,24 @@ showAlert('error', err.message);
         let html = '';
 
         if (currentPage > 1) {
-            html += `<button onclick="loadVisitors(${currentPage - 1})">← Назад</button>`;
+            html += `<button data-page="${currentPage - 1}">← Назад</button>`;
         }
 
         html += `<span>Страница ${currentPage} из ${totalPages}</span>`;
 
         if (currentPage < totalPages) {
-            html += `<button onclick="loadVisitors(${currentPage + 1})">Вперед →</button>`;
+            html += `<button data-page="${currentPage + 1}">Вперед →</button>`;
         }
 
         container.innerHTML = html;
-    }
 
-    // Поиск посетителей
-    function searchVisitors() {
-        clearTimeout(window.searchTimeout);
-        window.searchTimeout = setTimeout(() => {
-            loadVisitors(1);
-        }, 500);
-    }
-
-    // Фильтрация посетителей
-    function filterVisitors() {
-        loadVisitors(1);
-    }
-
-    // Предпросмотр фото
-    function previewPhoto() {
-        const file = document.getElementById('visitor-photo').files[0];
-        const preview = document.getElementById('photo-preview');
-
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                preview.src = e.target.result;
-                preview.classList.remove('hidden');
-            };
-            reader.readAsDataURL(file);
-        } else {
-            preview.classList.add('hidden');
-        }
-    }
-
-    // Обработка формы добавления посетителя
-    document.getElementById('visitor-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-
-        const formData = new FormData(e.target);
-        const submitBtn = e.target.querySelector('button[type="submit"]');
-
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = '<span class="loading"></span> Создание...';
-
-        try {
-            const response = await fetch('/api/visitors', {
-                method: 'POST',
-                body: formData
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error);
+        // Добавляем обработчики событий для пагинации
+        container.addEventListener('click', (e) => {
+            const page = e.target.dataset.page;
+            if (page) {
+                loadVisitors(parseInt(page));
             }
-
-            // Генерируем QR код для отображения
-            const qrUrl = `${window.location.origin}/scan/${data.visitor.visitor_uuid}`;
-
-            document.getElementById('qrcode').innerHTML = '';
-            QRCode.toCanvas(document.getElementById('qrcode'), qrUrl, {
-                width: 200,
-                margin: 2
-            });
-
-            document.getElementById('visitor-result').classList.remove('hidden');
-            document.getElementById('visitor-form').style.display = 'none';
-
-            showAlert('success', 'Посетитель успешно создан');
-        } catch (err) {
-            console.error('Ошибка создания посетителя:', err);
-            showAlert('error', err.message || 'Ошибка создания посетителя');
-        } finally {
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = 'Создать посетителя и QR-код';
-        }
-    });
-
-    // Сброс формы
-    function resetForm() {
-        document.getElementById('visitor-form').reset();
-        document.getElementById('photo-preview').classList.add('hidden');
-        document.getElementById('visitor-result').classList.add('hidden');
-        document.getElementById('visitor-form').style.display = 'block';
-    }
-
-    // Скачивание QR кода
-    function downloadQR() {
-        const canvas = document.querySelector('#qrcode canvas');
-        if (canvas) {
-            const link = document.createElement('a');
-            link.download = 'visitor-qr-code.png';
-            link.href = canvas.toDataURL();
-            link.click();
-        }
+        });
     }
 
     // Скачивание QR кода посетителя
@@ -1289,11 +984,60 @@ showAlert('error', err.message);
         }
     }
 
+    // Удаление посетителя
+    async function deleteVisitor(visitorId) {
+        if (!confirm('Вы уверены, что хотите удалить этого посетителя?\n\nЭто действие нельзя отменить!')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/visitors/${visitorId}`, {
+                method: 'DELETE'
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error);
+            }
+
+            showAlert('success', 'Посетитель удален');
+            loadVisitors(currentPage);
+        } catch (err) {
+            console.error('Ошибка удаления посетителя:', err);
+            showAlert('error', err.message || 'Ошибка удаления посетителя');
+        }
+    }
+
+    // Сброс формы
+    function resetForm() {
+        document.getElementById('visitor-form').reset();
+        document.getElementById('photo-preview').classList.add('hidden');
+        document.getElementById('visitor-result').classList.add('hidden');
+        document.getElementById('visitor-form').style.display = 'block';
+    }
+
+    // Скачивание QR кода
+    function downloadQR() {
+        const canvas = document.querySelector('#qrcode canvas');
+        if (canvas) {
+            const link = document.createElement('a');
+            link.download = 'visitor-qr-code.png';
+            link.href = canvas.toDataURL();
+            link.click();
+        }
+    }
+
     // Запуск сканера
     function startScanner() {
         const video = document.getElementById('qr-video');
         const startBtn = document.getElementById('start-scanner-btn');
         const stopBtn = document.getElementById('stop-scanner-btn');
+
+        if (typeof QrScanner === 'undefined') {
+            showAlert('error', 'QR сканер недоступен. Попробуйте обновить страницу.');
+            return;
+        }
 
         qrScanner = new QrScanner(video, result => {
             handleScanResult(result.data);
@@ -1348,8 +1092,8 @@ showAlert('error', err.message);
             }
 
             // Отправляем запрос на проверку
-            const response = await fetch(`/api/scan/check/${uuid}`, {
-                method: 'POST'
+            const response = await fetch(`/api/scan/${uuid}`, {
+                method: 'GET'
             });
 
             const data = await response.json();
@@ -1370,31 +1114,32 @@ showAlert('error', err.message);
     function displayScanResult(data) {
         const container = document.getElementById('scan-info');
 
-        if (!data.found) {
+        if (data.status === 'error') {
             container.innerHTML = `
-                    <div class="alert alert-error">
-                        <h4>❌ Посетитель не найден</h4>
-                        <p>QR код не найден в базе данных или заблокирован</p>
-                    </div>
-                `;
-        } else {
-            const visitor = data.visitor;
-            const stats = data.scanStats;
-
-            const alertClass = stats.isFirstScanToday ? 'alert-success' : 'alert-info';
-            const icon = stats.isFirstScanToday ? '✅' : '⚠️';
-            const message = stats.isFirstScanToday ? 'Первое сканирование за день' : 'Повторное сканирование';
-
+                <div class="alert alert-error">
+                    <h4>❌ ${data.title}</h4>
+                    <p>${data.message}</p>
+                </div>
+            `;
+        } else if (data.status === 'success') {
             container.innerHTML = `
-                    <div class="alert ${alertClass}">
-                        <h4>${icon} ${visitor.fullName}</h4>
-                        ${visitor.comment ? `<p><strong>Комментарий:</strong> ${visitor.comment}</p>` : ''}
-                        <p><strong>Ответственный:</strong> ${visitor.responsible}</p>
-                        <p><strong>Статус:</strong> ${message}</p>
-                        ${!stats.isFirstScanToday ? `<p><strong>Первое сканирование:</strong> ${new Date(stats.firstScanToday).toLocaleString('ru-RU')}</p>` : ''}
-                        <p><strong>Всего сканирований:</strong> ${stats.totalScans}</p>
-                    </div>
-                `;
+                <div class="alert alert-success">
+                    <h4>✅ ${data.title}</h4>
+                    ${data.comment ? `<p><strong>Комментарий:</strong> ${data.comment}</p>` : ''}
+                    <p><strong>Время сканирования:</strong> ${new Date(data.scanTime).toLocaleString('ru-RU')}</p>
+                    <p><strong>Статус:</strong> Первое сканирование за день</p>
+                </div>
+            `;
+        } else if (data.status === 'warning') {
+            container.innerHTML = `
+                <div class="alert alert-warning">
+                    <h4>⚠️ ${data.title}</h4>
+                    ${data.comment ? `<p><strong>Комментарий:</strong> ${data.comment}</p>` : ''}
+                    <p><strong>Первое сканирование:</strong> ${new Date(data.firstScanTime).toLocaleString('ru-RU')}</p>
+                    <p><strong>Текущее время:</strong> ${new Date(data.currentScanTime).toLocaleString('ru-RU')}</p>
+                    <p><strong>Статус:</strong> Повторное сканирование</p>
+                </div>
+            `;
         }
 
         document.getElementById('scan-result').classList.remove('hidden');
@@ -1424,45 +1169,45 @@ showAlert('error', err.message);
 
         // Обзорная статистика
         overview.innerHTML = `
-                <div class="stat-card">
-                    <div class="stat-number">${data.visitors.total_visitors}</div>
-                    <div class="stat-label">Всего посетителей</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number">${data.visitors.active_visitors}</div>
-                    <div class="stat-label">Активных</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number">${data.scans.today_scans}</div>
-                    <div class="stat-label">Сканирований сегодня</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number">${data.scans.week_scans}</div>
-                    <div class="stat-label">За неделю</div>
-                </div>
-            `;
+            <div class="stat-card">
+                <div class="stat-number">${data.visitors.total_visitors}</div>
+                <div class="stat-label">Всего посетителей</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">${data.visitors.active_visitors}</div>
+                <div class="stat-label">Активных</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">${data.scans.today_scans}</div>
+                <div class="stat-label">Сканирований сегодня</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">${data.scans.week_scans}</div>
+                <div class="stat-label">За неделю</div>
+            </div>
+        `;
 
         // Последняя активность
         if (data.recentActivity && data.recentActivity.length > 0) {
             activity.innerHTML = `
-                    <h3>Последние сканирования</h3>
-                    <div class="visitor-list">
-                        ${data.recentActivity.map(scan => `
-                            <div class="visitor-card">
-                                <div class="visitor-header">
-                                    <div class="visitor-name">${scan.last_name} ${scan.first_name} ${scan.middle_name}</div>
-                                    <div class="status-badge status-${scan.scan_type === 'first' ? 'active' : 'blocked'}">
-                                        ${scan.scan_type === 'first' ? 'Первое' : 'Повторное'}
-                                    </div>
-                                </div>
-                                <div class="visitor-info">
-                                    <div><strong>Время:</strong> ${new Date(scan.scanned_at).toLocaleString('ru-RU')}</div>
-                                    ${scan.scanned_by_name ? `<div><strong>Сканировал:</strong> ${scan.scanned_by_name}</div>` : ''}
+                <h3>Последние сканирования</h3>
+                <div class="visitor-list">
+                    ${data.recentActivity.map(scan => `
+                        <div class="visitor-card">
+                            <div class="visitor-header">
+                                <div class="visitor-name">${scan.last_name} ${scan.first_name} ${scan.middle_name || ''}</div>
+                                <div class="status-badge status-${scan.scan_type === 'first' ? 'active' : 'blocked'}">
+                                    ${scan.scan_type === 'first' ? 'Первое' : 'Повторное'}
                                 </div>
                             </div>
-                        `).join('')}
-                    </div>
-                `;
+                            <div class="visitor-info">
+                                <div><strong>Время:</strong> ${new Date(scan.scanned_at).toLocaleString('ru-RU')}</div>
+                                ${scan.scanned_by_name ? `<div><strong>Сканировал:</strong> ${scan.scanned_by_name}</div>` : ''}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
         } else {
             activity.innerHTML = '<div class="alert alert-info">Нет недавних сканирований</div>';
         }
@@ -1494,144 +1239,92 @@ showAlert('error', err.message);
         const container = document.getElementById('users-management');
 
         container.innerHTML = `
-                <div style="margin-bottom: 20px; display: flex; gap: 10px; align-items: center;">
-                    <button onclick="showCreateUserForm()" class="btn-success">➕ Создать пользователя</button>
-                    <button onclick="loadSystemStats()" class="btn-secondary">📊 Системная статистика</button>
-                    <button onclick="showCleanupOptions()" class="btn-secondary">🧹 Очистка данных</button>
-                </div>
+            <div style="margin-bottom: 20px;">
+                <button class="btn-success" id="create-user-btn">➕ Создать пользователя</button>
+                <button class="btn-secondary" id="system-stats-btn">📊 Системная статистика</button>
+            </div>
 
-                <!-- Форма создания пользователя -->
-                <div id="create-user-form" class="hidden" style="margin-bottom: 30px; padding: 20px; background: #f8f9fa; border-radius: 12px; border: 2px solid #e9ecef;">
-                    <h4 style="margin-bottom: 20px;">Создание нового пользователя</h4>
-                    <form id="user-creation-form">
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="new-username">Логин <span class="required">*</span></label>
-                                <input type="text" id="new-username" name="username" required
-                                       pattern="[a-zA-Z0-9_]+" title="Только буквы, цифры и подчеркивание">
-                            </div>
-                            <div class="form-group">
-                                <label for="new-password">Пароль <span class="required">*</span></label>
-                                <input type="password" id="new-password" name="password" required minlength="6">
-                            </div>
-                            <div class="form-group">
-                                <label for="new-role">Роль <span class="required">*</span></label>
-                                <select id="new-role" name="role" required>
-                                    <option value="">Выберите роль</option>
-                                    <option value="admin">Администратор</option>
-                                    <option value="moderator">Модератор</option>
-                                    <option value="skd">СКД</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="new-fullname">ФИО <span class="required">*</span></label>
-                                <input type="text" id="new-fullname" name="fullName" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="new-email">Email</label>
-                                <input type="email" id="new-email" name="email">
-                            </div>
-                        </div>
-                        <div style="display: flex; gap: 10px;">
-                            <button type="submit">✅ Создать пользователя</button>
-                            <button type="button" onclick="hideCreateUserForm()" class="btn-secondary">❌ Отмена</button>
-                        </div>
-                    </form>
-                </div>
-
-                <!-- Форма сброса пароля -->
-                <div id="reset-password-form" class="hidden" style="margin-bottom: 30px; padding: 20px; background: #fff3cd; border-radius: 12px; border: 2px solid #ffeaa7;">
-                    <h4 style="margin-bottom: 20px;">Сброс пароля пользователя</h4>
-                    <form id="password-reset-form">
-                        <input type="hidden" id="reset-user-id">
-                        <div class="form-group">
-                            <label for="reset-new-password">Новый пароль <span class="required">*</span></label>
-                            <input type="password" id="reset-new-password" name="newPassword" required minlength="6">
-                        </div>
-                        <div class="form-group">
-                            <label for="reset-confirm-password">Подтверждение пароля <span class="required">*</span></label>
-                            <input type="password" id="reset-confirm-password" required minlength="6">
-                        </div>
-                        <div style="display: flex; gap: 10px;">
-                            <button type="submit">🔑 Сбросить пароль</button>
-                            <button type="button" onclick="hidePasswordResetForm()" class="btn-secondary">❌ Отмена</button>
-                        </div>
-                    </form>
-                </div>
-
-                <!-- Список пользователей -->
-                <div id="users-list">
-                    ${users.map(user => `
-                        <div class="visitor-card">
-                            <div class="visitor-header">
-                                <div class="visitor-name">${user.fullName} (${user.username})</div>
-                                <div style="display: flex; gap: 10px; align-items: center;">
-                                    <div class="status-badge status-${user.isActive ? 'active' : 'blocked'}">
-                                        ${getRoleText(user.role)}
-                                    </div>
-                                    ${!user.isActive ? '<div class="status-badge status-blocked">Заблокирован</div>' : ''}
-                                    ${user.id === currentUser.id ? '<div class="status-badge" style="background: #d1ecf1; color: #0c5460;">Это вы</div>' : ''}
+            <div id="users-list">
+                ${users.map(user => `
+                    <div class="visitor-card">
+                        <div class="visitor-header">
+                            <div class="visitor-name">${user.fullName} (${user.username})</div>
+                            <div style="display: flex; gap: 10px; align-items: center;">
+                                <div class="status-badge status-${user.isActive ? 'active' : 'blocked'}">
+                                    ${getRoleText(user.role)}
                                 </div>
-                            </div>
-                            <div class="visitor-info">
-                                <div><strong>Email:</strong> ${user.email || 'Не указан'}</div>
-                                <div><strong>Создан:</strong> ${new Date(user.createdAt).toLocaleString('ru-RU')}</div>
-                                <div><strong>Последнее обновление:</strong> ${new Date(user.updatedAt).toLocaleString('ru-RU')}</div>
-                                <div><strong>Создал:</strong> ${user.createdByName || 'Система'}</div>
-                                <div><strong>Активных сессий:</strong> ${user.activeSessions}</div>
-                            </div>
-                            <div class="visitor-actions">
-                                <button onclick="showUserSessions(${user.id}, '${user.username}')" class="btn-secondary">📱 Сессии</button>
-                                <button onclick="showPasswordResetForm(${user.id}, '${user.fullName}')" class="btn-secondary">🔑 Сбросить пароль</button>
-                                <button onclick="toggleUserStatus(${user.id}, ${user.isActive}, '${user.fullName}')"
-                                        class="${user.isActive ? 'btn-danger' : 'btn-success'}"
-                                        ${user.id === currentUser.id ? 'disabled title="Нельзя изменить статус своего аккаунта"' : ''}>
-                                    ${user.isActive ? '🔒 Заблокировать' : '🔓 Разблокировать'}
-                                </button>
-                                ${user.id !== currentUser.id ? `<button onclick="deleteUser(${user.id}, '${user.fullName}')" class="btn-danger">🗑️ Удалить</button>` : ''}
+                                ${!user.isActive ? '<div class="status-badge status-blocked">Заблокирован</div>' : ''}
+                                ${user.id === currentUser.id ? '<div class="status-badge" style="background: #d1ecf1; color: #0c5460;">Это вы</div>' : ''}
                             </div>
                         </div>
-                    `).join('')}
-                </div>
+                        <div class="visitor-info">
+                            <div><strong>Email:</strong> ${user.email || 'Не указан'}</div>
+                            <div><strong>Создан:</strong> ${new Date(user.createdAt).toLocaleString('ru-RU')}</div>
+                            <div><strong>Создал:</strong> ${user.createdByName || 'Система'}</div>
+                            <div><strong>Активных сессий:</strong> ${user.activeSessions}</div>
+                        </div>
+                        <div class="visitor-actions">
+                            <button class="btn-secondary" data-action="reset-password" data-user-id="${user.id}">🔑 Сбросить пароль</button>
+                            <button class="${user.isActive ? 'btn-danger' : 'btn-success'}"
+                                    data-action="toggle-user-status" data-user-id="${user.id}" data-active="${user.isActive}"
+                                    ${user.id === currentUser.id ? 'disabled' : ''}>
+                                ${user.isActive ? '🔒 Заблокировать' : '🔓 Разблокировать'}
+                            </button>
+                            ${user.id !== currentUser.id ?
+            `<button class="btn-danger" data-action="delete-user" data-user-id="${user.id}">🗑️ Удалить</button>` :
+            ''
+        }
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
 
-                <!-- Системная информация -->
-                <div id="system-stats" class="hidden" style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 12px;">
-                    <h4>Системная статистика</h4>
-                    <div id="system-stats-content">Загрузка...</div>
-                </div>
-            `;
+        // Добавляем обработчики событий
+        document.getElementById('create-user-btn').addEventListener('click', () => {
+            showAlert('info', 'Функция создания пользователей в разработке');
+        });
 
-        // Добавляем обработчики форм
-        setupAdminFormHandlers();
+        document.getElementById('system-stats-btn').addEventListener('click', loadSystemStats);
+
+        container.addEventListener('click', handleAdminAction);
     }
 
-    // Настройка обработчиков форм админ панели
-    function setupAdminFormHandlers() {
-        // Форма создания пользователя
-        document.getElementById('user-creation-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            await createUser(e.target);
-        });
+    // Обработчик действий администратора
+    async function handleAdminAction(e) {
+        const action = e.target.dataset.action;
+        const userId = e.target.dataset.userId;
 
-        // Форма сброса пароля
-        document.getElementById('password-reset-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            await resetUserPassword(e.target);
-        });
+        if (!action || !userId) return;
 
-        // Проверка совпадения паролей
-        document.getElementById('reset-confirm-password').addEventListener('input', (e) => {
-            const password = document.getElementById('reset-new-password').value;
-            const confirm = e.target.value;
+        switch (action) {
+            case 'reset-password':
+                showAlert('info', 'Функция сброса пароля в разработке');
+                break;
+            case 'toggle-user-status':
+                showAlert('info', 'Функция изменения статуса в разработке');
+                break;
+            case 'delete-user':
+                showAlert('info', 'Функция удаления пользователя в разработке');
+                break;
+        }
+    }
 
-            if (password !== confirm) {
-                e.target.setCustomValidity('Пароли не совпадают');
-            } else {
-                e.target.setCustomValidity('');
+    // Загрузка системной статистики
+    async function loadSystemStats() {
+        try {
+            const response = await fetch('/api/admin/stats');
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error);
             }
-        });
+
+            showAlert('info', `Статистика системы:\n• Активные посетители: ${data.database.active_visitors}\n• Сканирований сегодня: ${data.database.today_scans}`);
+        } catch (err) {
+            console.error('Ошибка загрузки статистики:', err);
+            showAlert('error', 'Ошибка загрузки системной статистики');
+        }
     }
 
     // Показ уведомлений
@@ -1655,408 +1348,6 @@ showAlert('error', err.message);
             console.error('Ошибка выхода:', err);
         } finally {
             window.location.href = '/login';
-        }
-    }
-
-    // Функции-заглушки для будущей реализации (теперь реализованы выше)
-    function editVisitor(id) {
-        showAlert('info', 'Функция редактирования в разработке');
-    }
-
-    function deleteVisitor(id) {
-        showAlert('info', 'Функция удаления доступна только через API');
-    }
-
-    // Функции управления пользователями
-
-    // Показ формы создания пользователя
-    function showCreateUserForm() {
-        document.getElementById('create-user-form').classList.remove('hidden');
-        document.getElementById('new-username').focus();
-    }
-
-    // Скрытие формы создания пользователя
-    function hideCreateUserForm() {
-        document.getElementById('create-user-form').classList.add('hidden');
-        document.getElementById('user-creation-form').reset();
-    }
-
-    // Создание нового пользователя
-    async function createUser(form) {
-        const formData = new FormData(form);
-        const submitBtn = form.querySelector('button[type="submit"]');
-
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = '<span class="loading"></span> Создание...';
-
-        try {
-            const userData = {
-                username: formData.get('username'),
-                password: formData.get('password'),
-                role: formData.get('role'),
-                fullName: formData.get('fullName'),
-                email: formData.get('email') || null
-            };
-
-            const response = await fetch('/api/admin/users', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(userData)
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || 'Ошибка создания пользователя');
-            }
-
-            showAlert('success', `Пользователь ${data.user.username} успешно создан`);
-            hideCreateUserForm();
-            loadAdminPanel(); // Перезагружаем список пользователей
-        } catch (err) {
-            console.error('Ошибка создания пользователя:', err);
-            showAlert('error', err.message);
-        } finally {
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = '✅ Создать пользователя';
-        }
-    }
-
-    // Показ формы сброса пароля
-    function showPasswordResetForm(userId, fullName) {
-        document.getElementById('reset-user-id').value = userId;
-        document.getElementById('reset-password-form').classList.remove('hidden');
-        document.querySelector('#reset-password-form h4').textContent = `Сброс пароля для: ${fullName}`;
-        document.getElementById('reset-new-password').focus();
-    }
-
-    // Скрытие формы сброса пароля
-    function hidePasswordResetForm() {
-        document.getElementById('reset-password-form').classList.add('hidden');
-        document.getElementById('password-reset-form').reset();
-    }
-
-    // Сброс пароля пользователя
-    async function resetUserPassword(form) {
-        const formData = new FormData(form);
-        const userId = document.getElementById('reset-user-id').value;
-        const newPassword = formData.get('newPassword');
-        const confirmPassword = document.getElementById('reset-confirm-password').value;
-
-        if (newPassword !== confirmPassword) {
-            showAlert('error', 'Пароли не совпадают');
-            return;
-        }
-
-        const submitBtn = form.querySelector('button[type="submit"]');
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = '<span class="loading"></span> Сброс...';
-
-        try {
-            const response = await fetch(`/api/admin/users/${userId}/reset-password`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ newPassword })
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || 'Ошибка сброса пароля');
-            }
-
-            showAlert('success', data.message);
-            hidePasswordResetForm();
-            loadAdminPanel(); // Перезагружаем список
-        } catch (err) {
-            console.error('Ошибка сброса пароля:', err);
-            showAlert('error', err.message);
-        } finally {
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = '🔑 Сбросить пароль';
-        }
-    }
-
-    // Изменение статуса пользователя
-    async function toggleUserStatus(userId, isActive, fullName) {
-        const newStatus = !isActive;
-        const action = newStatus ? 'разблокировать' : 'заблокировать';
-
-        if (!confirm(`Вы уверены, что хотите ${action} пользователя "${fullName}"?`)) {
-            return;
-        }
-
-        try {
-            const response = await fetch(`/api/admin/users/${userId}`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ isActive: newStatus })
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || 'Ошибка изменения статуса');
-            }
-
-            showAlert('success', `Пользователь "${fullName}" ${newStatus ? 'разблокирован' : 'заблокирован'}`);
-            loadAdminPanel();
-        } catch (err) {
-            console.error('Ошибка изменения статуса:', err);
-            showAlert('error', err.message);
-        }
-    }
-
-    // Удаление пользователя
-    async function deleteUser(userId, fullName) {
-        if (!confirm(`Вы уверены, что хотите удалить пользователя "${fullName}"?\n\nЭто действие нельзя отменить!`)) {
-            return;
-        }
-
-        // Дополнительное подтверждение
-        const confirmation = prompt(`Для подтверждения удаления введите "УДАЛИТЬ":`);
-        if (confirmation !== 'УДАЛИТЬ') {
-            showAlert('info', 'Удаление отменено');
-            return;
-        }
-
-        try {
-            const response = await fetch(`/api/admin/users/${userId}`, {
-                method: 'DELETE'
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || 'Ошибка удаления пользователя');
-            }
-
-            showAlert('success', data.message);
-            loadAdminPanel();
-        } catch (err) {
-            console.error('Ошибка удаления пользователя:', err);
-            showAlert('error', err.message);
-        }
-    }
-
-    // Показ сессий пользователя
-    async function showUserSessions(userId, username) {
-        try {
-            const response = await fetch(`/api/auth/sessions`);
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || 'Ошибка получения сессий');
-            }
-
-            let sessionsHtml = `
-                    <div style="background: white; padding: 20px; border-radius: 12px; border: 2px solid #e9ecef; margin-top: 20px;">
-                        <h4>Активные сессии пользователя: ${username}</h4>
-                `;
-
-            if (data.sessions.length === 0) {
-                sessionsHtml += '<p>Нет активных сессий</p>';
-            } else {
-                sessionsHtml += `
-                        <div style="margin-top: 15px;">
-                            ${data.sessions.map(session => `
-                                <div class="visitor-card" style="margin-bottom: 10px;">
-                                    <div class="visitor-info">
-                                        <div><strong>Создана:</strong> ${new Date(session.createdAt).toLocaleString('ru-RU')}</div>
-                                        <div><strong>Истекает:</strong> ${new Date(session.expiresAt).toLocaleString('ru-RU')}</div>
-                                        <div><strong>IP адрес:</strong> ${session.ipAddress}</div>
-                                        <div><strong>Браузер:</strong> ${session.userAgent ? session.userAgent.substring(0, 100) + '...' : 'Неизвестно'}</div>
-                                        ${session.isCurrent ? '<div style="color: #28a745; font-weight: bold;">🟢 Текущая сессия</div>' : ''}
-                                    </div>
-                                    ${!session.isCurrent ? `
-                                        <div class="visitor-actions">
-                                            <button onclick="terminateSession('${session.id}', '${username}')" class="btn-danger">🔌 Завершить сессию</button>
-                                        </div>
-                                    ` : ''}
-                                </div>
-                            `).join('')}
-                        </div>
-                    `;
-            }
-
-            sessionsHtml += `
-                    <div style="margin-top: 15px;">
-                        <button onclick="closeSessions()" class="btn-secondary">❌ Закрыть</button>
-                    </div>
-                    </div>
-                `;
-
-            // Добавляем блок сессий в DOM
-            let sessionsContainer = document.getElementById('user-sessions-container');
-            if (!sessionsContainer) {
-                sessionsContainer = document.createElement('div');
-                sessionsContainer.id = 'user-sessions-container';
-                document.getElementById('users-management').appendChild(sessionsContainer);
-            }
-            sessionsContainer.innerHTML = sessionsHtml;
-
-        } catch (err) {
-            console.error('Ошибка получения сессий:', err);
-            showAlert('error', 'Ошибка получения информации о сессиях');
-        }
-    }
-
-    // Завершение конкретной сессии
-    async function terminateSession(sessionId, username) {
-        if (!confirm(`Завершить сессию пользователя ${username}?`)) {
-            return;
-        }
-
-        try {
-            const response = await fetch(`/api/auth/sessions/${sessionId}`, {
-                method: 'DELETE'
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || 'Ошибка завершения сессии');
-            }
-
-            showAlert('success', 'Сессия завершена');
-            // Перезагружаем информацию о сессиях
-            showUserSessions(null, username);
-        } catch (err) {
-            console.error('Ошибка завершения сессии:', err);
-            showAlert('error', err.message);
-        }
-    }
-
-    // Закрытие блока сессий
-    function closeSessions() {
-        const container = document.getElementById('user-sessions-container');
-        if (container) {
-            container.remove();
-        }
-    }
-
-    // Загрузка системной статистики
-    async function loadSystemStats() {
-        const container = document.getElementById('system-stats');
-        const content = document.getElementById('system-stats-content');
-
-        container.classList.remove('hidden');
-        content.innerHTML = 'Загрузка...';
-
-        try {
-            const response = await fetch('/api/admin/stats');
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || 'Ошибка получения статистики');
-            }
-
-            content.innerHTML = `
-                    <div class="stats-grid">
-                        <div class="detail-item">
-                            <div class="detail-label">Активные посетители</div>
-                            <div class="detail-value">${data.database.active_visitors}</div>
-                        </div>
-                        <div class="detail-item">
-                            <div class="detail-label">Заблокированные посетители</div>
-                            <div class="detail-value">${data.database.blocked_visitors}</div>
-                        </div>
-                        <div class="detail-item">
-                            <div class="detail-label">Активные пользователи</div>
-                            <div class="detail-value">${data.database.active_users}</div>
-                        </div>
-                        <div class="detail-item">
-                            <div class="detail-label">Активные сессии</div>
-                            <div class="detail-value">${data.database.active_sessions}</div>
-                        </div>
-                        <div class="detail-item">
-                            <div class="detail-label">Сканирований сегодня</div>
-                            <div class="detail-value">${data.database.today_scans}</div>
-                        </div>
-                        <div class="detail-item">
-                            <div class="detail-label">Изменений за неделю</div>
-                            <div class="detail-value">${data.additional.recent_changes || 0}</div>
-                        </div>
-                    </div>
-                    <div style="margin-top: 15px; padding: 15px; background: #e9ecef; border-radius: 8px;">
-                        <strong>Последнее обновление:</strong> ${new Date(data.timestamp).toLocaleString('ru-RU')}
-                    </div>
-                `;
-        } catch (err) {
-            console.error('Ошибка загрузки статистики:', err);
-            content.innerHTML = '<div class="alert alert-error">Ошибка загрузки статистики</div>';
-        }
-    }
-
-    // Показ опций очистки
-    function showCleanupOptions() {
-        const options = [
-            { value: 'expired_sessions', label: 'Истекшие сессии' },
-            { value: 'old_scans', label: 'Старые сканирования (>90 дней)' },
-            { value: 'old_history', label: 'Старая история изменений (>365 дней)' },
-            { value: 'all', label: 'Все вышеперечисленное' }
-        ];
-
-        const optionsHtml = options.map(opt =>
-            `<button onclick="performCleanup('${opt.value}')" class="btn-secondary" style="margin: 5px; width: 100%;">${opt.label}</button>`
-        ).join('');
-
-        const cleanupContainer = document.createElement('div');
-        cleanupContainer.innerHTML = `
-                <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-                            background: white; padding: 30px; border-radius: 12px; box-shadow: 0 20px 40px rgba(0,0,0,0.3);
-                            z-index: 1000; min-width: 300px;">
-                    <h4 style="margin-bottom: 20px;">Очистка данных</h4>
-                    <div style="margin-bottom: 20px;">
-                        ${optionsHtml}
-                    </div>
-                    <button onclick="this.parentElement.parentElement.remove()" class="btn-danger" style="width: 100%;">❌ Отмена</button>
-                </div>
-                <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 999;"
-                     onclick="this.parentElement.remove()"></div>
-            `;
-        document.body.appendChild(cleanupContainer);
-    }
-
-    // Выполнение очистки
-    async function performCleanup(cleanupType) {
-        if (!confirm(`Вы уверены, что хотите выполнить очистку?\n\nТип: ${cleanupType}\n\nЭто действие нельзя отменить!`)) {
-            return;
-        }
-
-        try {
-            const response = await fetch('/api/admin/cleanup', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ cleanupType })
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || 'Ошибка очистки');
-            }
-
-            const results = Object.entries(data.cleaned).map(([key, count]) => `${key}: ${count} записей`).join('\n');
-            showAlert('success', `Очистка выполнена успешно:\n${results}`);
-
-            // Закрываем модальное окно
-            const modal = document.querySelector('div[style*="position: fixed"]')?.parentElement;
-            if (modal) modal.remove();
-
-            // Обновляем статистику
-            loadSystemStats();
-        } catch (err) {
-            console.error('Ошибка очистки:', err);
-            showAlert('error', err.message);
         }
     }
 </script>

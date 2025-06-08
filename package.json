@@ -5,7 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node_modules/.bin/nodemon server.js",
+    "start:dev": "NODE_ENV=development node server-dev.js",
+    "dev": "NODE_ENV=development node_modules/.bin/nodemon server-dev.js",
+    "prod": "NODE_ENV=production node server.js",
     "generate-hashes": "node scripts/generate-password-hashes.js",
     "reset-db": "node scripts/reset-database.js",
     "create-admin": "node scripts/create-admin.js",
@@ -62,10 +64,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/inordon/MJF_BackStage_Scan.git"
+    "url": "https://github.com/your-username/visitor-qr-system.git"
   },
   "bugs": {
-    "url": "https://github.com/inordon/MJF_BackStage_Scan/issues"
+    "url": "https://github.com/your-username/visitor-qr-system/issues"
   },
-  "homepage": "https://github.com/inordon/MJF_BackStage_Scan#readme"
+  "homepage": "https://github.com/your-username/visitor-qr-system#readme"
 }
