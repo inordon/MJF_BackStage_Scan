@@ -79,15 +79,16 @@
 
             // Пытаемся загрузить с разных CDN
             const qrSources = [
-                'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js',
-                'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js'
+                'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js',
+                'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js'
             ];
 
             for (const src of qrSources) {
                 try {
                     await loadScript(src);
-                    if (typeof QRCode !== 'undefined') {
-                        console.log('✅ QRCode загружен с:', src);
+                    if (typeof QRCode !== 'undefined' || typeof qrcode !== 'undefined') {
+                        console.log('✅ QR библиотека загружена с:', src);
+                        window.QRCode = window.QRCode || window.qrcode;
                         return true;
                     }
                 } catch (err) {
