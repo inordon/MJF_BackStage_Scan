@@ -166,6 +166,12 @@
             border: 1px solid #bee5eb;
         }
 
+        .alert-warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
         .hidden {
             display: none !important;
         }
@@ -175,6 +181,16 @@
             margin-top: 30px;
             color: #666;
             font-size: 14px;
+        }
+
+        .rate-limit-info {
+            background: #fff3cd;
+            color: #856404;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 14px;
+            margin-bottom: 20px;
+            text-align: center;
         }
 
         @media (max-width: 480px) {
@@ -203,8 +219,6 @@
 
     <div id="alert-container"></div>
 
-
-
     <form id="login-form">
         <div class="form-group">
             <label for="username">Логин</label>
@@ -227,19 +241,24 @@
 </div>
 
 <script>
+    let rateLimitActive = false;
+    let rateLimitEnd = 0;
+
     // Проверяем, нет ли уже активной сессии
     document.addEventListener('DOMContentLoaded', async () => {
         try {
             const response = await fetch('/api/auth/check');
-            const data = await response.json();
-
-            if (data.authenticated) {
-                // Если есть return URL, перенаправляем туда
-                const urlParams = new URLSearchParams(window.location.search);
-                const returnUrl = urlParams.get('return') || '/';
-                window.location.href = returnUrl;
+            if (response.ok) {
+                const data = await response.json();
+                if (data.authenticated) {
+                    // Если есть return URL, перенаправляем туда
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const returnUrl = urlParams.get('return') || '/';
+                    window.location.href = returnUrl;
+                }
             }
         } catch (err) {
+            console.log('Проверка авторизации не удалась:', err);
             // Игнорируем ошибки, пользователь не авторизован
         }
     });
@@ -247,6 +266,13 @@
     // Обработка формы входа
     document.getElementById('login-form').addEventListener('submit', async (e) => {
         e.preventDefault();
+
+        // Проверяем rate limit
+        if (rateLimitActive && Date.now() < rateLimitEnd) {
+            const remainingTime = Math.ceil((rateLimitEnd - Date.now()) / 1000);
+            showAlert('warning', `Слишком много попыток. Попробуйте через ${remainingTime} секунд.`);
+            return;
+        }
 
         const formData = new FormData(e.target);
         const loginBtn = document.getElementById('login-btn');
@@ -267,10 +293,27 @@
                 body: JSON.stringify({
                     username: formData.get('username'),
                     password: formData.get('password')
-                })
+                }),
+                credentials: 'include' // Важно для работы с сессиями
             });
 
-            const data = await response.json();
+            let data;
+            const contentType = response.headers.get('content-type');
+
+            if (contentType && contentType.includes('application/json')) {
+                data = await response.json();
+            } else {
+                // Если ответ не JSON, показываем статус
+                throw new Error(`Сервер вернул неожиданный ответ: ${response.status} ${response.statusText}`);
+            }
+
+            if (response.status === 429) {
+                // Обрабатываем rate limiting
+                rateLimitActive = true;
+                rateLimitEnd = Date.now() + (15 * 60 * 1000); // 15 минут
+                showAlert('warning', data.error || 'Слишком много попыток входа. Попробуйте через 15 минут.');
+                return;
+            }
 
             if (!response.ok) {
                 throw new Error(data.error || 'Ошибка авторизации');
@@ -289,7 +332,15 @@
 
         } catch (err) {
             console.error('Ошибка входа:', err);
-            showAlert('error', err.message);
+
+            // Определяем тип ошибки
+            if (err.message.includes('NetworkError') || err.message.includes('fetch')) {
+                showAlert('error', 'Ошибка сети. Проверьте подключение к интернету.');
+            } else if (err.message.includes('JSON.parse')) {
+                showAlert('error', 'Сервер недоступен. Попробуйте позже.');
+            } else {
+                showAlert('error', err.message);
+            }
 
             // Очищаем пароль при ошибке
             document.getElementById('password').value = '';
@@ -301,13 +352,6 @@
         }
     });
 
-    // Заполнение демо данных (функция оставлена для совместимости, но не используется)
-    function fillCredentials(username, password) {
-        document.getElementById('username').value = username;
-        document.getElementById('password').value = password;
-        document.getElementById('username').focus();
-    }
-
     // Показ уведомлений
     function showAlert(type, message) {
         const container = document.getElementById('alert-container');
@@ -315,6 +359,11 @@
         alert.className = `alert alert-${type}`;
         alert.textContent = message;
         container.appendChild(alert);
+
+        // Автоматически скрываем через 10 секунд
+        setTimeout(() => {
+            alert.remove();
+        }, 10000);
     }
 
     // Очистка уведомлений
@@ -338,6 +387,16 @@
     // Фокус на первое поле при загрузке
     window.addEventListener('load', () => {
         document.getElementById('username').focus();
+    });
+
+    // Обработка ошибок сети
+    window.addEventListener('online', () => {
+        clearAlerts();
+        showAlert('success', 'Соединение восстановлено');
+    });
+
+    window.addEventListener('offline', () => {
+        showAlert('warning', 'Отсутствует подключение к интернету');
     });
 </script>
 </body>
