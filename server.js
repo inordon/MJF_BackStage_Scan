@@ -128,14 +128,14 @@ const authRoutes = require('./routes/auth');
 const visitorRoutes = require('./routes/visitors');
 const scanRoutes = require('./routes/scan');
 const adminRoutes = require('./routes/admin');
-const eventRoutes = require('./routes/events'); // Новые маршруты для событий
+const eventRoutes = require('./routes/events');
 
 // Маршруты API
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/visitors', apiLimiter, visitorRoutes);
 app.use('/api/scan', apiLimiter, scanRoutes);
 app.use('/api/admin', apiLimiter, adminRoutes);
-app.use('/api/events', apiLimiter, eventRoutes); // Подключаем маршруты событий
+app.use('/api/events', apiLimiter, eventRoutes);
 
 // Главная страница
 app.get('/', (req, res) => {
@@ -171,13 +171,11 @@ app.get('/health', (req, res) => {
 
 // Middleware для обработки ошибок multer
 app.use((err, req, res, next) => {
-    if (err instanceof multer.MulterError) {
-        if (err.code === 'LIMIT_FILE_SIZE') {
-            return res.status(413).json({ error: 'Файл слишком большой. Максимальный размер: 5MB' });
-        }
-        if (err.code === 'LIMIT_UNEXPECTED_FILE') {
-            return res.status(400).json({ error: 'Неожиданный файл в запросе' });
-        }
+    if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: 'Файл слишком большой. Максимальный размер: 5MB' });
+    }
+    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+        return res.status(400).json({ error: 'Неожиданный файл в запросе' });
     }
 
     if (err.message && err.message.includes('Only images allowed')) {
@@ -292,6 +290,7 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log('   🎯 Управление событиями');
     console.log('   📊 Статистика по событиям');
     console.log('   🔗 Привязка посетителей к событиям');
+    console.log('   📋 Табличное отображение данных');
 });
 
 module.exports = app;
