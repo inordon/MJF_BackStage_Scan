@@ -1,4 +1,4 @@
-// routes/visitors.js - исправленная версия с рабочим endpoint для активных событий
+// routes/visitors.js - обновленная версия с функционалом редактирования
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
@@ -84,6 +84,47 @@ const visitorValidation = [
     body('eventId')
         .isInt({ min: 1 })
         .withMessage('Необходимо выбрать событие'),
+    body('barcode')
+        .optional()
+        .trim()
+        .isLength({ min: 3, max: 100 })
+        .withMessage('Штрихкод должен содержать от 3 до 100 символов')
+        .matches(/^[A-Z0-9-_]+$/)
+        .withMessage('Штрихкод может содержать только заглавные буквы, цифры, дефисы и подчеркивания')
+];
+
+// Валидация для редактирования (eventId необязательно при обновлении)
+const visitorUpdateValidation = [
+    body('lastName')
+        .optional()
+        .trim()
+        .isLength({ min: 2, max: 50 })
+        .withMessage('Фамилия должна содержать от 2 до 50 символов')
+        .matches(/^[а-яёА-ЯЁa-zA-Z\s-]+$/)
+        .withMessage('Фамилия может содержать только буквы, пробелы и дефисы'),
+    body('firstName')
+        .optional()
+        .trim()
+        .isLength({ min: 2, max: 50 })
+        .withMessage('Имя должно содержать от 2 до 50 символов')
+        .matches(/^[а-яёА-ЯЁa-zA-Z\s-]+$/)
+        .withMessage('Имя может содержать только буквы, пробелы и дефисы'),
+    body('middleName')
+        .optional()
+        .trim()
+        .isLength({ max: 50 })
+        .withMessage('Отчество не должно превышать 50 символов')
+        .matches(/^[а-яёА-ЯЁa-zA-Z\s-]*$/)
+        .withMessage('Отчество может содержать только буквы, пробелы и дефисы'),
+    body('comment')
+        .optional()
+        .trim()
+        .isLength({ max: 500 })
+        .withMessage('Комментарий не должен превышать 500 символов'),
+    body('eventId')
+        .optional()
+        .isInt({ min: 1 })
+        .withMessage('Некорректный ID события'),
     body('barcode')
         .optional()
         .trim()
@@ -400,6 +441,266 @@ router.post('/', requireAuth, upload.single('photo'), visitorValidation, async (
 
         // Более детальная информация об ошибке
         let errorMessage = 'Ошибка сервера при создании посетителя';
+        if (err.message.includes('QR код')) {
+            errorMessage = err.message;
+        } else if (err.constraint && err.constraint.includes('barcode')) {
+            errorMessage = 'Посетитель с таким штрихкодом уже существует';
+        } else if (err.constraint) {
+            errorMessage = 'Ошибка ограничений базы данных';
+        }
+
+        res.status(500).json({
+            error: errorMessage,
+            details: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
+    }
+});
+
+// ========== НОВЫЙ ФУНКЦИОНАЛ РЕДАКТИРОВАНИЯ ==========
+
+// Редактировать посетителя
+router.put('/:id', requireAuth, canModifyVisitor, upload.single('photo'), visitorUpdateValidation, async (req, res) => {
+    try {
+        const { id } = req.params;
+        console.log(`📝 Редактирование посетителя ID: ${id}`);
+        console.log('Данные для обновления:', req.body);
+        console.log('Новое фото:', req.file);
+
+        // Проверка валидации
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            console.log('Ошибки валидации:', errors.array());
+            return res.status(400).json({
+                error: 'Ошибки валидации',
+                details: errors.array()
+            });
+        }
+
+        // Получаем текущие данные посетителя
+        const existingVisitor = await query(`
+            SELECT v.*, e.name as event_name, e.status as event_status
+            FROM visitors v
+            LEFT JOIN events e ON v.event_id = e.id
+            WHERE v.id = $1
+        `, [id]);
+
+        if (!existingVisitor.rows.length) {
+            return res.status(404).json({ error: 'Посетитель не найден' });
+        }
+
+        const current = existingVisitor.rows[0];
+        console.log('Текущие данные посетителя:', current);
+
+        const {
+            lastName,
+            firstName,
+            middleName,
+            comment,
+            eventId
+        } = req.body;
+
+        let { barcode } = req.body;
+
+        // Валидируем barcode если он изменяется
+        if (barcode && barcode.trim() !== '' && barcode !== current.barcode) {
+            barcode = barcode.trim().toUpperCase();
+
+            // Проверяем уникальность нового штрихкода
+            const barcodeCheck = await query(
+                'SELECT id FROM visitors WHERE barcode = $1 AND id != $2',
+                [barcode, id]
+            );
+
+            if (barcodeCheck.rows.length > 0) {
+                return res.status(400).json({
+                    error: 'Посетитель с таким штрихкодом уже существует'
+                });
+            }
+        } else if (!barcode || barcode.trim() === '') {
+            // Если штрихкод очищен, оставляем текущий
+            barcode = current.barcode;
+        }
+
+        // Проверяем новое событие если оно указано
+        let newEventId = eventId ? parseInt(eventId) : current.event_id;
+        if (eventId && parseInt(eventId) !== current.event_id) {
+            const eventCheck = await query(
+                'SELECT id, name, status FROM events WHERE id = $1',
+                [eventId]
+            );
+
+            if (!eventCheck.rows.length) {
+                return res.status(400).json({ error: 'Выбранное событие не найдено' });
+            }
+
+            if (eventCheck.rows[0].status !== 'active') {
+                return res.status(400).json({
+                    error: 'Нельзя привязывать посетителей к неактивному событию'
+                });
+            }
+
+            newEventId = parseInt(eventId);
+        }
+
+        const result = await transaction(async (client) => {
+            // Подготавливаем данные для обновления
+            const updateData = {
+                last_name: lastName || current.last_name,
+                first_name: firstName || current.first_name,
+                middle_name: middleName !== undefined ? (middleName || null) : current.middle_name,
+                comment: comment !== undefined ? (comment || null) : current.comment,
+                barcode: barcode,
+                event_id: newEventId,
+                updated_by: req.user.id
+            };
+
+            // Обрабатываем новое фото
+            let photo_path = current.photo_path;
+            if (req.file) {
+                photo_path = req.file.path;
+
+                // Удаляем старое фото если оно есть
+                if (current.photo_path && fs.existsSync(current.photo_path)) {
+                    try {
+                        fs.unlinkSync(current.photo_path);
+                        console.log('Старое фото удалено:', current.photo_path);
+                    } catch (err) {
+                        console.error('Ошибка удаления старого фото:', err);
+                    }
+                }
+            }
+            updateData.photo_path = photo_path;
+
+            // Обновляем запись в БД
+            const updateResult = await client.query(`
+                UPDATE visitors SET
+                    last_name = $1,
+                    first_name = $2,
+                    middle_name = $3,
+                    comment = $4,
+                    barcode = $5,
+                    event_id = $6,
+                    photo_path = $7,
+                    updated_at = CURRENT_TIMESTAMP,
+                    updated_by = $8
+                WHERE id = $9
+                RETURNING *
+            `, [
+                updateData.last_name,
+                updateData.first_name,
+                updateData.middle_name,
+                updateData.comment,
+                updateData.barcode,
+                updateData.event_id,
+                updateData.photo_path,
+                updateData.updated_by,
+                id
+            ]);
+
+            // Если штрихкод изменился, генерируем новый QR код
+            if (barcode !== current.barcode) {
+                console.log('Штрихкод изменился, генерируем новый QR код');
+
+                // Удаляем старый QR код
+                if (current.qr_code_path && fs.existsSync(current.qr_code_path)) {
+                    try {
+                        fs.unlinkSync(current.qr_code_path);
+                        console.log('Старый QR код удален:', current.qr_code_path);
+                    } catch (err) {
+                        console.error('Ошибка удаления старого QR кода:', err);
+                    }
+                }
+
+                // Генерируем новый QR код
+                const qrData = barcode;
+                const qrCodeDir = process.env.UPLOAD_PATH ?
+                    path.join(process.env.UPLOAD_PATH, 'qr-codes') :
+                    'uploads/qr-codes';
+                ensureDirectoryExists(qrCodeDir);
+                const qrCodePath = path.join(qrCodeDir, `visitor-${barcode}-qr.png`);
+
+                try {
+                    await QRCode.toFile(qrCodePath, qrData, {
+                        errorCorrectionLevel: 'M',
+                        type: 'png',
+                        quality: 0.92,
+                        margin: 1,
+                        color: {
+                            dark: '#000000',
+                            light: '#FFFFFF'
+                        },
+                        width: 256
+                    });
+                    console.log('Новый QR код создан:', qrCodePath);
+
+                    // Обновляем путь к QR коду в БД
+                    await client.query(
+                        'UPDATE visitors SET qr_code_path = $1 WHERE id = $2',
+                        [qrCodePath, id]
+                    );
+                } catch (qrError) {
+                    console.error('Ошибка генерации нового QR кода:', qrError);
+                    throw new Error('Не удалось создать новый QR код: ' + qrError.message);
+                }
+            }
+
+            return updateResult.rows[0];
+        });
+
+        // Получаем обновленные данные с информацией о событии
+        const updatedVisitor = await query(`
+            SELECT v.*, e.name as event_name, e.start_date, e.end_date,
+                   updater.full_name as updated_by_name
+            FROM visitors v
+                     LEFT JOIN events e ON v.event_id = e.id
+                     LEFT JOIN users updater ON v.updated_by = updater.id
+            WHERE v.id = $1
+        `, [id]);
+
+        console.log('✅ Посетитель успешно обновлен');
+
+        res.json({
+            message: 'Посетитель успешно обновлен',
+            visitor: {
+                id: updatedVisitor.rows[0].id,
+                visitor_uuid: updatedVisitor.rows[0].visitor_uuid,
+                last_name: updatedVisitor.rows[0].last_name,
+                first_name: updatedVisitor.rows[0].first_name,
+                middle_name: updatedVisitor.rows[0].middle_name,
+                comment: updatedVisitor.rows[0].comment,
+                status: updatedVisitor.rows[0].status,
+                barcode: updatedVisitor.rows[0].barcode,
+                photo_path: updatedVisitor.rows[0].photo_path,
+                qr_code_path: updatedVisitor.rows[0].qr_code_path,
+                event: updatedVisitor.rows[0].event_id ? {
+                    id: updatedVisitor.rows[0].event_id,
+                    name: updatedVisitor.rows[0].event_name,
+                    start_date: updatedVisitor.rows[0].start_date,
+                    end_date: updatedVisitor.rows[0].end_date
+                } : null,
+                updated_at: updatedVisitor.rows[0].updated_at,
+                updated_by_name: updatedVisitor.rows[0].updated_by_name
+            },
+            changes: {
+                barcode_changed: barcode !== current.barcode,
+                event_changed: newEventId !== current.event_id,
+                photo_changed: !!req.file
+            }
+        });
+
+    } catch (err) {
+        console.error('❌ Ошибка редактирования посетителя:', err);
+
+        // Очищаем загруженное фото в случае ошибки
+        if (req.file && fs.existsSync(req.file.path)) {
+            try {
+                fs.unlinkSync(req.file.path);
+            } catch (cleanupErr) {
+                console.error('Ошибка очистки фото:', cleanupErr);
+            }
+        }
+
+        let errorMessage = 'Ошибка сервера при редактировании посетителя';
         if (err.message.includes('QR код')) {
             errorMessage = err.message;
         } else if (err.constraint && err.constraint.includes('barcode')) {
