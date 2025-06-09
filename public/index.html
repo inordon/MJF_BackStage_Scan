@@ -46,6 +46,7 @@
             <button onclick="app.visitors.filter()">🔍 Найти</button>
             <button onclick="app.visitors.resetFilters()">🔄 Сброс</button>
             <button onclick="app.events.loadActiveForFilters()" title="Обновить список событий">🔄 События</button>
+            <button onclick="app.visitors.testEventsAPI()" title="Тест API событий">🧪 Тест API</button>
         </div>
 
         <div class="table-container">
@@ -123,21 +124,39 @@
 
         // Инициализация
         async init() {
-            console.log('🚀 Инициализация...');
+            console.log('🚀 Инициализация приложения...');
+
+            // Проверяем готовность DOM
+            console.log('🔍 Проверка готовности DOM...');
+            const requiredElements = [
+                'event-filter',
+                'search-input',
+                'status-filter',
+                'visitors-table',
+                'visitor-form'
+            ];
+
+            const missingElements = requiredElements.filter(id => !document.getElementById(id));
+            if (missingElements.length > 0) {
+                console.error('❌ Не найдены элементы DOM:', missingElements);
+                // Подождем немного и попробуем снова
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+
             this.setupEventListeners();
 
             if (await this.auth.check()) {
                 try {
                     // Сначала загружаем события для фильтров
-                    console.log('📋 Загрузка событий для фильтров...');
+                    console.log('📋 Шаг 1: Загрузка событий для фильтров...');
                     await this.events.loadActiveForFilters();
 
                     // Затем загружаем посетителей
-                    console.log('👥 Загрузка посетителей...');
+                    console.log('👥 Шаг 2: Загрузка посетителей...');
                     await this.visitors.load();
 
                     // И статистику
-                    console.log('📊 Загрузка статистики...');
+                    console.log('📊 Шаг 3: Загрузка статистики...');
                     await this.stats.load();
 
                     console.log('✅ Инициализация завершена успешно');
@@ -168,7 +187,7 @@
         },
 
         // Переключение вкладок
-        async showTab(tab) {
+        showTab(tab) {
             document.querySelectorAll('.content').forEach(c => c.classList.remove('active'));
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
 
@@ -179,8 +198,12 @@
             const loaders = {
                 visitors: async () => {
                     console.log('Переход на вкладку посетителей - обновляем фильтр событий');
-                    await this.events.loadActiveForFilters(); // Обновляем фильтр событий
-                    this.visitors.load();
+                    try {
+                        await this.events.loadActiveForFilters();
+                        this.visitors.load();
+                    } catch (err) {
+                        console.error('Ошибка загрузки данных для вкладки посетителей:', err);
+                    }
                 },
                 'add-visitor': () => this.events.loadActiveForForm(),
                 events: () => this.events.load(),
@@ -190,7 +213,7 @@
 
             if (loaders[tab]) {
                 try {
-                    await loaders[tab]();
+                    loaders[tab]();
                 } catch (err) {
                     console.error(`Ошибка загрузки данных для вкладки ${tab}:`, err);
                 }
@@ -495,6 +518,67 @@
             resetForm() {
                 document.getElementById('visitor-form').reset();
                 document.getElementById('qr-result').classList.add('hidden');
+            },
+
+            // Функция для тестирования API событий
+            testEventsAPI() {
+                console.log('🧪 Тестирование API событий...');
+
+                // Тест 1: Проверяем активные события
+                console.log('📡 Тест 1: /api/visitors/events/active');
+                fetch('/api/visitors/events/active')
+                    .then(response => {
+                        console.log('📊 Статус ответа:', response.status, response.statusText);
+                        console.log('📊 Headers:', [...response.headers.entries()]);
+                        return response.text();
+                    })
+                    .then(text => {
+                        console.log('📊 Сырой ответ:', text);
+                        try {
+                            const data = JSON.parse(text);
+                            console.log('📊 Парсинг JSON успешен:', data);
+
+                            if (data.events) {
+                                console.log(`📊 Найдено событий: ${data.events.length}`);
+                                data.events.forEach((event, i) => {
+                                    console.log(`  ${i + 1}. ${event.name} (ID: ${event.id}, статус: ${event.status || 'unknown'})`);
+                                });
+                            } else {
+                                console.log('⚠️ Нет поля events в ответе');
+                            }
+                        } catch (e) {
+                            console.error('❌ Ошибка парсинга JSON:', e);
+                        }
+                    })
+                    .catch(err => console.error('❌ Ошибка запроса:', err));
+
+                // Тест 2: Проверяем все события
+                console.log('📡 Тест 2: /api/events');
+                fetch('/api/events')
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log('📊 Все события:', data);
+                        if (data.events) {
+                            console.log(`📊 Всего событий: ${data.events.length}`);
+                            const activeEvents = data.events.filter(e => e.status === 'active');
+                            console.log(`📊 Активных событий: ${activeEvents.length}`);
+                        }
+                    })
+                    .catch(err => console.error('❌ Ошибка запроса всех событий:', err));
+
+                // Тест 3: Проверяем состояние фильтра
+                console.log('📡 Тест 3: Состояние DOM');
+                const filter = document.getElementById('event-filter');
+                if (filter) {
+                    console.log('📊 Фильтр найден, опций:', filter.options.length);
+                    for (let i = 0; i < filter.options.length; i++) {
+                        console.log(`  ${i}: "${filter.options[i].text}" (value: "${filter.options[i].value}")`);
+                    }
+                } else {
+                    console.error('❌ Фильтр не найден в DOM');
+                }
+
+                app.showAlert('info', 'Тест API запущен, смотрите консоль для результатов');
             }
         },
 
@@ -503,59 +587,84 @@
             // Загрузка активных событий для фильтра на вкладке "Посетители"
             async loadActiveForFilters() {
                 try {
-                    console.log('Загрузка активных событий для фильтра...');
-                    const res = await fetch('/api/visitors/events/active');
+                    console.log('🔄 Загрузка активных событий для фильтра...');
 
-                    if (!res.ok) {
-                        const errorData = await res.json().catch(() => ({ error: 'Неизвестная ошибка' }));
-                        console.error('Ошибка загрузки событий:', errorData);
-                        throw new Error(errorData.error || `HTTP ${res.status}`);
-                    }
-
-                    const data = await res.json();
-                    console.log('Активные события загружены для фильтра:', data);
-
-                    // Проверяем, что элемент существует
+                    // Проверяем, что элемент существует ДО запроса
                     const filter = document.getElementById('event-filter');
                     if (!filter) {
-                        console.error('Элемент event-filter не найден в DOM');
+                        console.error('❌ Элемент event-filter не найден в DOM перед запросом');
                         return;
                     }
 
-                    // Очищаем фильтр
-                    filter.innerHTML = '<option value="">Все события</option>';
+                    console.log('📡 Отправка запроса к API...');
+                    const res = await fetch('/api/visitors/events/active');
+                    console.log('📊 Статус ответа:', res.status, res.statusText);
+
+                    if (!res.ok) {
+                        const errorText = await res.text();
+                        console.error('❌ Ошибка ответа сервера:', errorText);
+                        throw new Error(`HTTP ${res.status}: ${errorText}`);
+                    }
+
+                    const data = await res.json();
+                    console.log('📋 Полученные данные:', data);
+                    console.log('📋 Тип data.events:', typeof data.events, Array.isArray(data.events));
+                    console.log('📋 Количество событий:', data.events ? data.events.length : 'undefined');
+
+                    // Проверяем элемент ПОСЛЕ запроса
+                    const filterAfter = document.getElementById('event-filter');
+                    if (!filterAfter) {
+                        console.error('❌ Элемент event-filter исчез из DOM после запроса');
+                        return;
+                    }
+
+                    console.log('🧹 Очистка фильтра...');
+                    filterAfter.innerHTML = '<option value="">Все события</option>';
 
                     if (data.events && Array.isArray(data.events)) {
                         if (data.events.length > 0) {
-                            // Есть события - добавляем их
-                            data.events.forEach(event => {
+                            console.log('✅ Добавление событий в фильтр...');
+                            data.events.forEach((event, index) => {
+                                console.log(`  📌 Событие ${index + 1}:`, {
+                                    id: event.id,
+                                    name: event.name,
+                                    status: event.status
+                                });
+
                                 const option = document.createElement('option');
                                 option.value = event.id;
                                 option.textContent = event.name;
-                                filter.appendChild(option);
+                                filterAfter.appendChild(option);
                             });
-                            console.log(`✅ Добавлено ${data.events.length} событий в фильтр`);
+                            console.log(`✅ Успешно добавлено ${data.events.length} событий в фильтр`);
                         } else {
-                            // Нет событий - добавляем соответствующую опцию
+                            console.log('ℹ️ Массив событий пустой');
                             const option = document.createElement('option');
                             option.value = '';
                             option.textContent = 'Нет активных событий';
                             option.disabled = true;
-                            filter.appendChild(option);
-                            console.log('ℹ️ Нет активных событий для отображения');
+                            filterAfter.appendChild(option);
                         }
                     } else {
-                        console.error('Неверный формат ответа:', data);
+                        console.error('❌ data.events не является массивом:', data.events);
                         const option = document.createElement('option');
                         option.value = '';
                         option.textContent = 'Ошибка формата данных';
                         option.disabled = true;
-                        filter.appendChild(option);
+                        filterAfter.appendChild(option);
                     }
 
-                    console.log('Фильтр событий обновлен успешно');
+                    // Проверяем финальное состояние
+                    console.log('🔍 Финальное состояние фильтра:');
+                    console.log('  - Количество опций:', filterAfter.options.length);
+                    for (let i = 0; i < filterAfter.options.length; i++) {
+                        console.log(`  - Опция ${i}:`, filterAfter.options[i].text, `(value: ${filterAfter.options[i].value})`);
+                    }
+
+                    console.log('✅ Загрузка событий для фильтра завершена');
                 } catch (err) {
-                    console.error('Ошибка загрузки активных событий для фильтра:', err);
+                    console.error('❌ Ошибка загрузки активных событий для фильтра:', err);
+                    console.error('❌ Стек ошибки:', err.stack);
 
                     // Показываем ошибку в фильтре
                     const filter = document.getElementById('event-filter');
@@ -794,8 +903,12 @@
                         if (res.ok) {
                             app.showAlert('success', 'Событие создано успешно');
                             this.load();
-                            await this.loadActiveForFilters(); // Обновляем фильтр на вкладке посетителей
-                            await this.loadActiveForForm(); // Обновляем форму добавления
+                            try {
+                                await this.loadActiveForFilters(); // Обновляем фильтр на вкладке посетителей
+                                await this.loadActiveForForm(); // Обновляем форму добавления
+                            } catch (err) {
+                                console.error('Ошибка обновления фильтров после создания события:', err);
+                            }
                         } else {
                             throw new Error(data.error || 'Ошибка создания события');
                         }
@@ -860,8 +973,12 @@
                     if (res.ok) {
                         app.showAlert('success', data.message);
                         this.load();
-                        await this.loadActiveForFilters(); // Обновляем фильтр
-                        await this.loadActiveForForm(); // Обновляем форму
+                        try {
+                            await this.loadActiveForFilters(); // Обновляем фильтр
+                            await this.loadActiveForForm(); // Обновляем форму
+                        } catch (err) {
+                            console.error('Ошибка обновления фильтров после изменения статуса:', err);
+                        }
                     } else {
                         throw new Error(data.error || 'Ошибка изменения статуса');
                     }
@@ -881,8 +998,12 @@
                     if (res.ok) {
                         app.showAlert('success', data.message);
                         this.load();
-                        await this.loadActiveForFilters(); // Обновляем фильтр
-                        await this.loadActiveForForm(); // Обновляем форму
+                        try {
+                            await this.loadActiveForFilters(); // Обновляем фильтр
+                            await this.loadActiveForForm(); // Обновляем форму
+                        } catch (err) {
+                            console.error('Ошибка обновления фильтров после удаления события:', err);
+                        }
                     } else {
                         throw new Error(data.error || 'Ошибка удаления события');
                     }
@@ -1315,13 +1436,41 @@
             };
         },
 
-        async logout() {
-            try {
-                await fetch('/api/auth/logout', { method: 'POST' });
-            } finally {
-                window.location.href = '/login';
+        // Глобальные функции для отладки (доступны в консоли браузера)
+        window.debugApp = {
+            testEventsAPI: () => app.visitors.testEventsAPI(),
+            loadEvents: () => app.events.loadActiveForFilters(),
+            debugFilter: () => app.visitors.debugEventFilter(),
+            debugVisitors: () => app.visitors.debugVisitorsLoad(),
+            state: () => console.log('App state:', app.state),
+            checkAuth: () => app.auth.check(),
+
+            // Принудительное обновление фильтра
+            forceUpdateFilter: async () => {
+                console.log('🔄 Принудительное обновление фильтра...');
+                const filter = document.getElementById('event-filter');
+                if (!filter) {
+                    console.error('❌ Фильтр не найден');
+                    return;
+                }
+
+                filter.innerHTML = '<option value="">🔄 Загрузка...</option>';
+
+                try {
+                    await app.events.loadActiveForFilters();
+                    console.log('✅ Обновление завершено');
+                } catch (err) {
+                    console.error('❌ Ошибка обновления:', err);
+                    filter.innerHTML = '<option value="">❌ Ошибка</option>';
+                }
             }
-        }
+        };
+
+        console.log('🛠️ Доступны функции отладки: window.debugApp');
+        console.log('   - debugApp.testEventsAPI() - тест API событий');
+        console.log('   - debugApp.loadEvents() - перезагрузка событий');
+        console.log('   - debugApp.forceUpdateFilter() - принудительное обновление');
+        console.log('   - debugApp.state() - состояние приложения');
     };
 
     // Запуск приложения
