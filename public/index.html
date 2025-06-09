@@ -391,9 +391,23 @@
                 if (filter && filter.options.length > 0) {
                     console.log('- Опции:');
                     for (let i = 0; i < filter.options.length; i++) {
-                        console.log(`  ${i}: ${filter.options[i].text} (value: ${filter.options[i].value})`);
+                        const option = filter.options[i];
+                        console.log(`  ${i}: "${option.text}" (value: "${option.value}", disabled: ${option.disabled})`);
                     }
                 }
+
+                // Также проверяем API напрямую
+                console.log('🌐 Проверка API...');
+                fetch('/api/visitors/events/active')
+                    .then(r => r.json())
+                    .then(data => {
+                        console.log('📊 Ответ API:', data);
+                        console.log('📊 Количество событий в API:', data.events ? data.events.length : 'N/A');
+                        if (data.events && data.events.length > 0) {
+                            console.log('📊 Первое событие:', data.events[0]);
+                        }
+                    })
+                    .catch(err => console.error('❌ Ошибка API:', err));
             },
 
             resetForm() {
@@ -426,22 +440,33 @@
                         return;
                     }
 
-                    // Очищаем и заполняем фильтр
+                    // Очищаем фильтр
                     filter.innerHTML = '<option value="">Все события</option>';
 
-                    if (data.events && Array.isArray(data.events) && data.events.length > 0) {
-                        data.events.forEach(event => {
+                    if (data.events && Array.isArray(data.events)) {
+                        if (data.events.length > 0) {
+                            // Есть события - добавляем их
+                            data.events.forEach(event => {
+                                const option = document.createElement('option');
+                                option.value = event.id;
+                                option.textContent = event.name;
+                                filter.appendChild(option);
+                            });
+                            console.log(`✅ Добавлено ${data.events.length} событий в фильтр`);
+                        } else {
+                            // Нет событий - добавляем соответствующую опцию
                             const option = document.createElement('option');
-                            option.value = event.id;
-                            option.textContent = event.name;
+                            option.value = '';
+                            option.textContent = 'Нет активных событий';
+                            option.disabled = true;
                             filter.appendChild(option);
-                        });
-                        console.log(`Добавлено ${data.events.length} событий в фильтр`);
+                            console.log('ℹ️ Нет активных событий для отображения');
+                        }
                     } else {
-                        console.log('Нет активных событий для отображения');
+                        console.error('Неверный формат ответа:', data);
                         const option = document.createElement('option');
                         option.value = '';
-                        option.textContent = 'Нет активных событий';
+                        option.textContent = 'Ошибка формата данных';
                         option.disabled = true;
                         filter.appendChild(option);
                     }
@@ -453,7 +478,7 @@
                     // Показываем ошибку в фильтре
                     const filter = document.getElementById('event-filter');
                     if (filter) {
-                        filter.innerHTML = '<option value="">Ошибка загрузки событий</option>';
+                        filter.innerHTML = '<option value="">Все события</option><option value="" disabled>Ошибка загрузки</option>';
                     }
 
                     app.showAlert('error', 'Ошибка загрузки событий для фильтра: ' + err.message);
@@ -482,22 +507,33 @@
                         return;
                     }
 
-                    // Очищаем и заполняем форму
+                    // Очищаем форму
                     select.innerHTML = '<option value="">Выберите событие</option>';
 
-                    if (data.events && Array.isArray(data.events) && data.events.length > 0) {
-                        data.events.forEach(event => {
+                    if (data.events && Array.isArray(data.events)) {
+                        if (data.events.length > 0) {
+                            // Есть события - добавляем их
+                            data.events.forEach(event => {
+                                const option = document.createElement('option');
+                                option.value = event.id;
+                                option.textContent = event.name;
+                                select.appendChild(option);
+                            });
+                            console.log(`✅ Добавлено ${data.events.length} событий в форму`);
+                        } else {
+                            // Нет событий - добавляем соответствующую опцию
                             const option = document.createElement('option');
-                            option.value = event.id;
-                            option.textContent = event.name;
+                            option.value = '';
+                            option.textContent = 'Нет активных событий';
+                            option.disabled = true;
                             select.appendChild(option);
-                        });
-                        console.log(`Добавлено ${data.events.length} событий в форму`);
+                            console.log('ℹ️ Нет активных событий для формы');
+                        }
                     } else {
-                        console.log('Нет активных событий для формы');
+                        console.error('Неверный формат ответа для формы:', data);
                         const option = document.createElement('option');
                         option.value = '';
-                        option.textContent = 'Нет активных событий';
+                        option.textContent = 'Ошибка формата данных';
                         option.disabled = true;
                         select.appendChild(option);
                     }
@@ -509,7 +545,7 @@
                     // Показываем ошибку в форме
                     const select = document.querySelector('#visitor-form select[name="eventId"]');
                     if (select) {
-                        select.innerHTML = '<option value="">Ошибка загрузки событий</option>';
+                        select.innerHTML = '<option value="">Выберите событие</option><option value="" disabled>Ошибка загрузки</option>';
                     }
 
                     app.showAlert('error', 'Ошибка загрузки событий для формы: ' + err.message);
