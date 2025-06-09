@@ -418,5 +418,288 @@ router.get('/search/scans', requireScanAuth, async (req, res) => {
         res.status(500).json({ error: 'Ошибка сервера' });
     }
 });
+router.get('/stats/detailed', requireScanAuth, async (req, res) => {
+    try {
+        const {
+            date_from = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 30 дней назад
+            date_to = new Date().toISOString().split('T')[0] // сегодня
+        } = req.query;
 
+        // Основная статистика
+        const mainStats = await query(`
+            SELECT
+                COUNT(*) as total_scans,
+                COUNT(DISTINCT visitor_id) as unique_visitors,
+                COUNT(CASE WHEN scan_type = 'first' THEN 1 END) as first_scans,
+                COUNT(CASE WHEN scan_type = 'repeat' THEN 1 END) as repeat_scans,
+                COUNT(CASE WHEN scan_type = 'duplicate' THEN 1 END) as duplicate_scans,
+                COUNT(CASE WHEN scan_type = 'blocked_attempt' THEN 1 END) as blocked_attempts,
+                COUNT(CASE WHEN scan_type = 'batch' THEN 1 END) as batch_scans,
+                MIN(scanned_at) as first_scan_time,
+                MAX(scanned_at) as last_scan_time
+            FROM scans
+            WHERE scan_date BETWEEN $1 AND $2
+        `, [date_from, date_to]);
+
+        // Статистика по дням
+        const dailyStats = await query(`
+            SELECT
+                scan_date,
+                COUNT(*) as scan_count,
+                COUNT(DISTINCT visitor_id) as unique_visitors,
+                COUNT(CASE WHEN scan_type = 'first' THEN 1 END) as first_scans,
+                COUNT(CASE WHEN scan_type = 'repeat' THEN 1 END) as repeat_scans
+            FROM scans
+            WHERE scan_date BETWEEN $1 AND $2
+            GROUP BY scan_date
+            ORDER BY scan_date
+        `, [date_from, date_to]);
+
+        // Статистика по часам (за сегодня)
+        const hourlyStats = await query(`
+            SELECT
+                EXTRACT(HOUR FROM scanned_at) as hour,
+                COUNT(*) as scan_count,
+                COUNT(DISTINCT visitor_id) as unique_visitors
+            FROM scans
+            WHERE scan_date = CURRENT_DATE
+            GROUP BY EXTRACT(HOUR FROM scanned_at)
+            ORDER BY hour
+        `);
+
+        // Статистика по событиям
+        const eventStats = await query(`
+            SELECT
+                e.id,
+                e.name,
+                COUNT(s.id) as scan_count,
+                COUNT(DISTINCT s.visitor_id) as unique_visitors
+            FROM events e
+            LEFT JOIN visitors v ON e.id = v.event_id
+            LEFT JOIN scans s ON v.id = s.visitor_id AND s.scan_date BETWEEN $1 AND $2
+            GROUP BY e.id, e.name
+            HAVING COUNT(s.id) > 0
+            ORDER BY scan_count DESC
+        `, [date_from, date_to]);
+
+        res.json({
+            period: { date_from, date_to },
+            summary: mainStats.rows[0],
+            daily: dailyStats.rows.map(row => ({
+                date: row.scan_date,
+                scanCount: parseInt(row.scan_count),
+                uniqueVisitors: parseInt(row.unique_visitors),
+                firstScans: parseInt(row.first_scans || 0),
+                repeatScans: parseInt(row.repeat_scans || 0)
+            })),
+            hourly: hourlyStats.rows.map(row => ({
+                hour: parseInt(row.hour),
+                scanCount: parseInt(row.scan_count),
+                uniqueVisitors: parseInt(row.unique_visitors)
+            })),
+            events: eventStats.rows.map(row => ({
+                id: row.id,
+                name: row.name,
+                scanCount: parseInt(row.scan_count),
+                uniqueVisitors: parseInt(row.unique_visitors)
+            })),
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (err) {
+        console.error('Ошибка получения детальной статистики сканирований:', err);
+        res.status(500).json({ error: 'Ошибка сервера' });
+    }
+});
+
+// Получить статистику топ-активности
+router.get('/stats/top-activity', requireScanAuth, async (req, res) => {
+    try {
+        const { limit = 10, period = '7' } = req.query;
+
+        // Топ посетителей по количеству сканирований
+        const topVisitors = await query(`
+            SELECT
+                v.id,
+                v.last_name,
+                v.first_name,
+                v.middle_name,
+                e.name as event_name,
+                COUNT(s.id) as scan_count,
+                COUNT(DISTINCT s.scan_date) as active_days,
+                MAX(s.scanned_at) as last_scan
+            FROM visitors v
+            LEFT JOIN events e ON v.event_id = e.id
+            LEFT JOIN scans s ON v.id = s.visitor_id
+            WHERE s.scan_date >= CURRENT_DATE - INTERVAL '${parseInt(period)} days'
+            GROUP BY v.id, v.last_name, v.first_name, v.middle_name, e.name
+            ORDER BY scan_count DESC
+            LIMIT $1
+        `, [limit]);
+
+        // Топ часов по активности
+        const topHours = await query(`
+            SELECT
+                EXTRACT(HOUR FROM scanned_at) as hour,
+                COUNT(*) as scan_count,
+                COUNT(DISTINCT visitor_id) as unique_visitors,
+                COUNT(DISTINCT scan_date) as active_days
+            FROM scans
+            WHERE scan_date >= CURRENT_DATE - INTERVAL '${parseInt(period)} days'
+            GROUP BY EXTRACT(HOUR FROM scanned_at)
+            ORDER BY scan_count DESC
+            LIMIT $1
+        `, [limit]);
+
+        // Топ дней по активности
+        const topDays = await query(`
+            SELECT
+                scan_date,
+                COUNT(*) as scan_count,
+                COUNT(DISTINCT visitor_id) as unique_visitors,
+                COUNT(CASE WHEN scan_type = 'first' THEN 1 END) as first_time_visitors
+            FROM scans
+            WHERE scan_date >= CURRENT_DATE - INTERVAL '${parseInt(period)} days'
+            GROUP BY scan_date
+            ORDER BY scan_count DESC
+            LIMIT $1
+        `);
+
+        res.json({
+            period: `${period} дней`,
+            topVisitors: topVisitors.rows.map(row => ({
+                id: row.id,
+                name: `${row.last_name} ${row.first_name} ${row.middle_name || ''}`.trim(),
+                eventName: row.event_name,
+                scanCount: parseInt(row.scan_count),
+                activeDays: parseInt(row.active_days),
+                lastScan: row.last_scan
+            })),
+            topHours: topHours.rows.map(row => ({
+                hour: parseInt(row.hour),
+                scanCount: parseInt(row.scan_count),
+                uniqueVisitors: parseInt(row.unique_visitors),
+                activeDays: parseInt(row.active_days)
+            })),
+            topDays: topDays.rows.map(row => ({
+                date: row.scan_date,
+                scanCount: parseInt(row.scan_count),
+                uniqueVisitors: parseInt(row.unique_visitors),
+                firstTimeVisitors: parseInt(row.first_time_visitors || 0)
+            })),
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (err) {
+        console.error('Ошибка получения топ-активности:', err);
+        res.status(500).json({ error: 'Ошибка сервера' });
+    }
+});
+
+// Получить сравнительную статистику
+router.get('/stats/comparison', requireScanAuth, async (req, res) => {
+    try {
+        // Сравнение текущей недели с предыдущей
+        const currentWeekStats = await query(`
+            SELECT
+                COUNT(*) as total_scans,
+                COUNT(DISTINCT visitor_id) as unique_visitors,
+                COUNT(CASE WHEN scan_type = 'first' THEN 1 END) as first_scans
+            FROM scans
+            WHERE scan_date >= CURRENT_DATE - INTERVAL '7 days'
+        `);
+
+        const previousWeekStats = await query(`
+            SELECT
+                COUNT(*) as total_scans,
+                COUNT(DISTINCT visitor_id) as unique_visitors,
+                COUNT(CASE WHEN scan_type = 'first' THEN 1 END) as first_scans
+            FROM scans
+            WHERE scan_date >= CURRENT_DATE - INTERVAL '14 days'
+            AND scan_date < CURRENT_DATE - INTERVAL '7 days'
+        `);
+
+        // Сравнение сегодня с вчера
+        const todayStats = await query(`
+            SELECT
+                COUNT(*) as total_scans,
+                COUNT(DISTINCT visitor_id) as unique_visitors
+            FROM scans
+            WHERE scan_date = CURRENT_DATE
+        `);
+
+        const yesterdayStats = await query(`
+            SELECT
+                COUNT(*) as total_scans,
+                COUNT(DISTINCT visitor_id) as unique_visitors
+            FROM scans
+            WHERE scan_date = CURRENT_DATE - INTERVAL '1 day'
+        `);
+
+        // Вычисляем изменения
+        const calculateChange = (current, previous) => {
+            if (previous === 0) return current > 0 ? 100 : 0;
+            return Math.round(((current - previous) / previous) * 100);
+        };
+
+        const currentWeek = currentWeekStats.rows[0];
+        const previousWeek = previousWeekStats.rows[0];
+        const today = todayStats.rows[0];
+        const yesterday = yesterdayStats.rows[0];
+
+        res.json({
+            weeklyComparison: {
+                current: {
+                    totalScans: parseInt(currentWeek.total_scans),
+                    uniqueVisitors: parseInt(currentWeek.unique_visitors),
+                    firstScans: parseInt(currentWeek.first_scans)
+                },
+                previous: {
+                    totalScans: parseInt(previousWeek.total_scans),
+                    uniqueVisitors: parseInt(previousWeek.unique_visitors),
+                    firstScans: parseInt(previousWeek.first_scans)
+                },
+                changes: {
+                    totalScans: calculateChange(
+                        parseInt(currentWeek.total_scans),
+                        parseInt(previousWeek.total_scans)
+                    ),
+                    uniqueVisitors: calculateChange(
+                        parseInt(currentWeek.unique_visitors),
+                        parseInt(previousWeek.unique_visitors)
+                    ),
+                    firstScans: calculateChange(
+                        parseInt(currentWeek.first_scans),
+                        parseInt(previousWeek.first_scans)
+                    )
+                }
+            },
+            dailyComparison: {
+                today: {
+                    totalScans: parseInt(today.total_scans),
+                    uniqueVisitors: parseInt(today.unique_visitors)
+                },
+                yesterday: {
+                    totalScans: parseInt(yesterday.total_scans),
+                    uniqueVisitors: parseInt(yesterday.unique_visitors)
+                },
+                changes: {
+                    totalScans: calculateChange(
+                        parseInt(today.total_scans),
+                        parseInt(yesterday.total_scans)
+                    ),
+                    uniqueVisitors: calculateChange(
+                        parseInt(today.unique_visitors),
+                        parseInt(yesterday.unique_visitors)
+                    )
+                }
+            },
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (err) {
+        console.error('Ошибка получения сравнительной статистики:', err);
+        res.status(500).json({ error: 'Ошибка сервера' });
+    }
+});
 module.exports = router;

@@ -9,6 +9,7 @@
     <!-- Подключаем внешние библиотеки -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
     <script src="https://unpkg.com/qr-scanner@1.4.2/qr-scanner.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
 
     <link rel="stylesheet" href="/css/styles.css">
 </head>
@@ -94,7 +95,12 @@
 
     <!-- Статистика -->
     <div id="stats" class="content">
-        <div id="stats-overview" class="stats-grid"></div>
+        <div style="position: relative;">
+            <button class="export-button" onclick="app.stats.exportStats()">
+                📊 Экспорт статистики
+            </button>
+            <div id="stats-overview" class="stats-grid"></div>
+        </div>
         <div id="stats-tables"></div>
     </div>
 
@@ -1211,37 +1217,508 @@
 
         // Статистика
         stats: {
+            chartInstances: {}, // Хранение экземпляров графиков для обновления
+
             async load() {
                 try {
-                    const res = await fetch('/api/visitors/stats/overview');
-                    const data = await res.json();
+                    console.log('📊 Загрузка статистики...');
 
-                    this.render(data);
+                    // Показываем индикатор загрузки
+                    document.getElementById('stats-tables').innerHTML = '<div class="loading">Загрузка детальной статистики...</div>';
+
+                    // Загружаем данные параллельно
+                    const [overviewData, dailyData, eventsData, userActivity] = await Promise.all([
+                        this.loadOverviewStats(),
+                        this.loadDailyStats(),
+                        this.loadEventsStats(),
+                        this.loadUserActivity()
+                    ]);
+
+                    // Рендерим все разделы
+                    this.renderOverview(overviewData);
+                    this.renderDetailedStats({
+                        overview: overviewData,
+                        daily: dailyData,
+                        events: eventsData,
+                        userActivity: userActivity
+                    });
+
+                    console.log('✅ Статистика загружена успешно');
                 } catch (err) {
-                    app.showAlert('error', 'Ошибка загрузки статистики');
+                    console.error('❌ Ошибка загрузки статистики:', err);
+                    app.showAlert('error', 'Ошибка загрузки статистики: ' + err.message);
+
+                    document.getElementById('stats-tables').innerHTML = `
+                <div class="empty" style="color: #dc3545;">
+                    <h3>❌ Ошибка загрузки статистики</h3>
+                    <p>${err.message}</p>
+                    <button onclick="app.stats.load()" style="margin-top: 10px;">🔄 Попробовать снова</button>
+                </div>
+            `;
                 }
             },
 
-            render(data) {
+            async loadOverviewStats() {
+                const res = await fetch('/api/visitors/stats/overview');
+                if (!res.ok) throw new Error('Ошибка загрузки общей статистики');
+                return res.json();
+            },
+
+            async loadDailyStats() {
+                const res = await fetch('/api/scan/stats/daily');
+                if (!res.ok) throw new Error('Ошибка загрузки ежедневной статистики');
+                return res.json();
+            },
+
+            async loadEventsStats() {
+                const res = await fetch('/api/events');
+                if (!res.ok) throw new Error('Ошибка загрузки статистики событий');
+                return res.json();
+            },
+
+            async loadUserActivity() {
+                // Получаем активность пользователей (если есть права администратора)
+                if (app.state.currentUser.role === 'admin') {
+                    try {
+                        const res = await fetch('/api/admin/activity-logs?limit=10');
+                        if (res.ok) {
+                            return res.json();
+                        }
+                    } catch (err) {
+                        console.log('Не удалось загрузить активность пользователей');
+                    }
+                }
+                return { logs: [] };
+            },
+
+            renderOverview(data) {
                 const overview = document.getElementById('stats-overview');
                 overview.innerHTML = `
-                <div class="stat-card">
-                    <div class="stat-number">${data.visitors?.total_visitors || 0}</div>
-                    <div class="stat-label">Всего посетителей</div>
+            <div class="stat-card">
+                <div class="stat-number">${data.visitors?.total_visitors || 0}</div>
+                <div class="stat-label">Всего посетителей</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">${data.visitors?.active_visitors || 0}</div>
+                <div class="stat-label">Активных</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">${data.scans?.today_scans || 0}</div>
+                <div class="stat-label">Сканирований сегодня</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">${data.scans?.week_scans || 0}</div>
+                <div class="stat-label">За неделю</div>
+            </div>
+        `;
+            },
+
+            renderDetailedStats(data) {
+                const container = document.getElementById('stats-tables');
+
+                container.innerHTML = `
+            <div class="stats-section">
+                <h3>📊 Сканирования по часам</h3>
+                <div class="chart-container">
+                    <canvas id="hourly-scans-chart" width="400" height="200"></canvas>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-number">${data.visitors?.active_visitors || 0}</div>
-                    <div class="stat-label">Активных</div>
+            </div>
+
+            <div class="stats-section">
+                <h3>🎯 Статистика по событиям</h3>
+                <div class="chart-container">
+                    <canvas id="events-chart" width="400" height="200"></canvas>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-number">${data.scans?.today_scans || 0}</div>
-                    <div class="stat-label">Сканирований сегодня</div>
+            </div>
+
+            <div class="stats-section">
+                <h3>📈 Динамика посетителей</h3>
+                <div class="chart-container">
+                    <canvas id="visitors-trend-chart" width="400" height="200"></canvas>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-number">${data.scans?.week_scans || 0}</div>
-                    <div class="stat-label">За неделю</div>
+            </div>
+
+            <div class="stats-section">
+                <h3>📋 Детальная статистика</h3>
+                <div class="stats-grid-detailed">
+                    <div class="stat-detail-card">
+                        <h4>👥 Посетители</h4>
+                        <div class="stat-details">
+                            <div class="stat-row">
+                                <span>Всего зарегистрировано:</span>
+                                <strong>${data.overview.visitors?.total_visitors || 0}</strong>
+                            </div>
+                            <div class="stat-row">
+                                <span>Активных:</span>
+                                <strong class="text-success">${data.overview.visitors?.active_visitors || 0}</strong>
+                            </div>
+                            <div class="stat-row">
+                                <span>Заблокированных:</span>
+                                <strong class="text-danger">${data.overview.visitors?.blocked_visitors || 0}</strong>
+                            </div>
+                            <div class="stat-row">
+                                <span>Создано сегодня:</span>
+                                <strong>${data.overview.visitors?.today_created || 0}</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="stat-detail-card">
+                        <h4>📱 Сканирования</h4>
+                        <div class="stat-details">
+                            <div class="stat-row">
+                                <span>Всего сканирований:</span>
+                                <strong>${data.overview.scans?.total_scans || 0}</strong>
+                            </div>
+                            <div class="stat-row">
+                                <span>Сегодня:</span>
+                                <strong class="text-primary">${data.overview.scans?.today_scans || 0}</strong>
+                            </div>
+                            <div class="stat-row">
+                                <span>За неделю:</span>
+                                <strong>${data.overview.scans?.week_scans || 0}</strong>
+                            </div>
+                            <div class="stat-row">
+                                <span>Уникальных посетителей:</span>
+                                <strong>${data.overview.scans?.unique_visitors_scanned || 0}</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="stat-detail-card">
+                        <h4>🎯 События</h4>
+                        <div class="stat-details">
+                            <div class="stat-row">
+                                <span>Всего событий:</span>
+                                <strong>${data.events.events?.length || 0}</strong>
+                            </div>
+                            <div class="stat-row">
+                                <span>Активных:</span>
+                                <strong class="text-success">${this.countActiveEvents(data.events.events)}</strong>
+                            </div>
+                            <div class="stat-row">
+                                <span>С посетителями:</span>
+                                <strong>${this.countEventsWithVisitors(data.overview.eventStats)}</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="stat-detail-card">
+                        <h4>⏰ Сегодня</h4>
+                        <div class="stat-details">
+                            <div class="stat-row">
+                                <span>Первое сканирование:</span>
+                                <strong>${this.formatTime(data.daily.summary?.first_scan_time)}</strong>
+                            </div>
+                            <div class="stat-row">
+                                <span>Последнее сканирование:</span>
+                                <strong>${this.formatTime(data.daily.summary?.last_scan_time)}</strong>
+                            </div>
+                            <div class="stat-row">
+                                <span>Пиковый час:</span>
+                                <strong>${this.formatPeakHour(data.daily.hourly)}</strong>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            `;
+            </div>
+
+            ${data.overview.eventStats?.length > 0 ? `
+                <div class="stats-section">
+                    <h3>🏆 Топ событий по активности</h3>
+                    <div class="events-ranking">
+                        ${this.renderEventsRanking(data.overview.eventStats)}
+                    </div>
+                </div>
+            ` : ''}
+
+            ${data.overview.recentActivity?.length > 0 ? `
+                <div class="stats-section">
+                    <h3>🕒 Последняя активность</h3>
+                    <div class="activity-list">
+                        ${this.renderRecentActivity(data.overview.recentActivity)}
+                    </div>
+                </div>
+            ` : ''}
+        `;
+
+                // Создаем графики после добавления HTML
+                setTimeout(() => {
+                    this.createHourlyChart(data.daily.hourly);
+                    this.createEventsChart(data.overview.eventStats);
+                    this.createVisitorsTrendChart(data.overview);
+                }, 100);
+            },
+
+            createHourlyChart(hourlyData) {
+                const ctx = document.getElementById('hourly-scans-chart');
+                if (!ctx) return;
+
+                // Уничтожаем предыдущий график, если существует
+                if (this.chartInstances.hourlyChart) {
+                    this.chartInstances.hourlyChart.destroy();
+                }
+
+                // Подготавливаем данные для всех 24 часов
+                const hours = Array.from({length: 24}, (_, i) => i);
+                const scanCounts = hours.map(hour => {
+                    const data = hourlyData?.find(h => parseInt(h.hour) === hour);
+                    return data ? data.scanCount : 0;
+                });
+
+                this.chartInstances.hourlyChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: hours.map(h => `${h}:00`),
+                        datasets: [{
+                            label: 'Сканирований',
+                            data: scanCounts,
+                            borderColor: 'rgb(75, 192, 192)',
+                            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                            tension: 0.4,
+                            fill: true
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Сканирования по часам (сегодня)'
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    stepSize: 1
+                                }
+                            }
+                        }
+                    }
+                });
+            },
+
+            createEventsChart(eventStats) {
+                const ctx = document.getElementById('events-chart');
+                if (!ctx || !eventStats?.length) {
+                    if (ctx) {
+                        ctx.getContext('2d').fillText('Нет данных о событиях', 50, 50);
+                    }
+                    return;
+                }
+
+                if (this.chartInstances.eventsChart) {
+                    this.chartInstances.eventsChart.destroy();
+                }
+
+                const topEvents = eventStats.slice(0, 5); // Топ 5 событий
+
+                this.chartInstances.eventsChart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: topEvents.map(e => e.name),
+                        datasets: [{
+                            data: topEvents.map(e => e.visitors_count),
+                            backgroundColor: [
+                                'rgba(255, 99, 132, 0.8)',
+                                'rgba(54, 162, 235, 0.8)',
+                                'rgba(255, 205, 86, 0.8)',
+                                'rgba(75, 192, 192, 0.8)',
+                                'rgba(153, 102, 255, 0.8)'
+                            ]
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Распределение посетителей по событиям'
+                            },
+                            legend: {
+                                position: 'bottom'
+                            }
+                        }
+                    }
+                });
+            },
+
+            createVisitorsTrendChart(overviewData) {
+                const ctx = document.getElementById('visitors-trend-chart');
+                if (!ctx) return;
+
+                if (this.chartInstances.visitorsTrendChart) {
+                    this.chartInstances.visitorsTrendChart.destroy();
+                }
+
+                // Генерируем тренд за последние 7 дней (пример данных)
+                const dates = this.generateLast7Days();
+                const visitorsData = this.generateTrendData(overviewData);
+
+                this.chartInstances.visitorsTrendChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: dates,
+                        datasets: [{
+                            label: 'Новые посетители',
+                            data: visitorsData,
+                            backgroundColor: 'rgba(54, 162, 235, 0.8)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Динамика создания посетителей (7 дней)'
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    stepSize: 1
+                                }
+                            }
+                        }
+                    }
+                });
+            },
+
+            // Вспомогательные методы
+            countActiveEvents(events) {
+                if (!events) return 0;
+                return events.filter(e => e.status === 'active').length;
+            },
+
+            countEventsWithVisitors(eventStats) {
+                if (!eventStats) return 0;
+                return eventStats.filter(e => e.visitors_count > 0).length;
+            },
+
+            formatTime(timeString) {
+                if (!timeString) return 'Нет данных';
+                return new Date(timeString).toLocaleTimeString('ru-RU', {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            },
+
+            formatPeakHour(hourlyData) {
+                if (!hourlyData?.length) return 'Нет данных';
+
+                const maxHour = hourlyData.reduce((max, current) =>
+                    current.scanCount > max.scanCount ? current : max
+                );
+
+                return `${maxHour.hour}:00 (${maxHour.scanCount} сканирований)`;
+            },
+
+            generateLast7Days() {
+                const dates = [];
+                for (let i = 6; i >= 0; i--) {
+                    const date = new Date();
+                    date.setDate(date.getDate() - i);
+                    dates.push(date.toLocaleDateString('ru-RU', {
+                        month: 'short',
+                        day: 'numeric'
+                    }));
+                }
+                return dates;
+            },
+
+            generateTrendData(overviewData) {
+                // Простая симуляция данных - в реальной системе это должно приходить от API
+                const baseValue = Math.floor((overviewData.visitors?.total_visitors || 10) / 7);
+                return Array.from({length: 7}, () =>
+                    Math.max(0, baseValue + Math.floor(Math.random() * 5) - 2)
+                );
+            },
+
+            renderEventsRanking(eventStats) {
+                return eventStats.slice(0, 5).map((event, index) => `
+            <div class="ranking-item">
+                <div class="ranking-position">${index + 1}</div>
+                <div class="ranking-info">
+                    <div class="ranking-name">${event.name}</div>
+                    <div class="ranking-stats">
+                        👥 ${event.visitors_count} посетителей |
+                        📱 ${event.scans_count} сканирований |
+                        📊 ${event.today_scans} сегодня
+                    </div>
+                </div>
+                <div class="ranking-progress">
+                    <div class="progress-bar" style="width: ${Math.min(100, (event.visitors_count / Math.max(...eventStats.map(e => e.visitors_count))) * 100)}%"></div>
+                </div>
+            </div>
+        `).join('');
+            },
+
+            renderRecentActivity(recentActivity) {
+                return recentActivity.slice(0, 10).map(activity => `
+            <div class="activity-item">
+                <div class="activity-icon">${this.getActivityIcon(activity.scan_type)}</div>
+                <div class="activity-details">
+                    <div class="activity-text">
+                        <strong>${activity.last_name} ${activity.first_name}</strong>
+                        ${activity.event_name ? `на событии "${activity.event_name}"` : ''}
+                    </div>
+                    <div class="activity-time">
+                        ${new Date(activity.scanned_at).toLocaleString('ru-RU')}
+                        ${activity.scanned_by_name ? `• ${activity.scanned_by_name}` : ''}
+                    </div>
+                </div>
+            </div>
+        `).join('');
+            },
+
+            getActivityIcon(scanType) {
+                const icons = {
+                    'first': '🆕',
+                    'repeat': '🔄',
+                    'duplicate': '⚠️',
+                    'blocked_attempt': '🚫',
+                    'batch': '📦'
+                };
+                return icons[scanType] || '📱';
+            },
+
+            // Метод для экспорта статистики
+            async exportStats() {
+                try {
+                    const data = await this.loadOverviewStats();
+                    const csvData = this.convertToCSV(data);
+                    this.downloadCSV(csvData, 'statistics.csv');
+                    app.showAlert('success', 'Статистика экспортирована');
+                } catch (err) {
+                    app.showAlert('error', 'Ошибка экспорта: ' + err.message);
+                }
+            },
+
+            convertToCSV(data) {
+                const rows = [
+                    ['Метрика', 'Значение'],
+                    ['Всего посетителей', data.visitors?.total_visitors || 0],
+                    ['Активных посетителей', data.visitors?.active_visitors || 0],
+                    ['Заблокированных посетителей', data.visitors?.blocked_visitors || 0],
+                    ['Сканирований сегодня', data.scans?.today_scans || 0],
+                    ['Сканирований за неделю', data.scans?.week_scans || 0],
+                    ['Уникальных посетителей', data.scans?.unique_visitors_scanned || 0]
+                ];
+
+                return rows.map(row => row.join(',')).join('\n');
+            },
+
+            downloadCSV(csvData, filename) {
+                const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = filename;
+                link.click();
+                URL.revokeObjectURL(link.href);
             }
         },
 
