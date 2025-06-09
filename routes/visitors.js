@@ -74,22 +74,81 @@ const visitorValidation = [
         .withMessage('Комментарий не должен превышать 500 символов')
 ];
 
-// Получить всех посетителей (исправляем маршрут)
+// Функция генерации штрихкода
+function generateBarcode() {
+    const date = new Date();
+    const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+    const randomNum = Math.floor(Math.random() * 9000) + 1000;
+    return `VIS${dateStr}${randomNum}`;
+}
+
+// ================================
+// API ENDPOINTS ДЛЯ СОБЫТИЙ
+// ================================
+
+// ИСПРАВЛЕНИЕ: Добавляем отсутствующий endpoint для активных событий
+router.get('/events/active', requireAuth, async (req, res) => {
+    try {
+        console.log('🎯 Запрос активных событий для фильтра');
+
+        const result = await query(`
+            SELECT id, name, start_date, end_date, location
+            FROM events 
+            WHERE status = 'active' 
+              AND end_date >= CURRENT_DATE
+            ORDER BY start_date ASC
+        `);
+
+        console.log(`✅ Найдено активных событий: ${result.rows.length}`);
+
+        res.json({
+            success: true,
+            events: result.rows.map(event => ({
+                id: event.id,
+                name: event.name,
+                start_date: event.start_date,
+                end_date: event.end_date,
+                location: event.location
+            }))
+        });
+
+    } catch (err) {
+        console.error('❌ Ошибка получения активных событий:', err);
+        res.status(500).json({
+            success: false,
+            error: 'Ошибка сервера при получении событий',
+            events: []
+        });
+    }
+});
+
+// ================================
+// ОСНОВНЫЕ ENDPOINTS ДЛЯ ПОСЕТИТЕЛЕЙ
+// ================================
+
+// ИСПРАВЛЕНИЕ: Получить всех посетителей с полной информацией
 router.get('/', requireAuth, async (req, res) => {
     try {
-        const { page = 1, limit = 50, status, search } = req.query;
+        const { page = 1, limit = 50, status, search, event_id } = req.query;
         const offset = (page - 1) * limit;
 
+        console.log('📋 Запрос списка посетителей:', { page, limit, status, search, event_id });
+
+        // ИСПРАВЛЕНИЕ: Добавляем barcode в SELECT и JOIN с событиями
         let queryText = `
             SELECT v.id, v.visitor_uuid, v.last_name, v.first_name, v.middle_name,
-                   v.comment, v.status, v.created_at, v.updated_at,
-                   v.photo_path, v.qr_code_path,
+                   v.comment, v.barcode, v.status, v.created_at, v.updated_at,
+                   v.photo_path, v.qr_code_path, v.event_id,
                    creator.full_name as created_by_name,
+                   e.name as event_name,
+                   e.start_date as event_start_date,
+                   e.end_date as event_end_date,
                    COUNT(s.id) as total_scans,
                    COUNT(CASE WHEN s.scan_date = CURRENT_DATE THEN 1 END) as first_scan_today,
                    MAX(s.scanned_at) as last_scan
             FROM visitors v
                      LEFT JOIN users creator ON v.created_by = creator.id
+                     LEFT JOIN events e ON v.event_id = e.id
                      LEFT JOIN scans s ON v.id = s.visitor_id
         `;
 
@@ -101,12 +160,18 @@ router.get('/', requireAuth, async (req, res) => {
             queryParams.push(status);
         }
 
+        if (event_id && !isNaN(parseInt(event_id))) {
+            conditions.push(`v.event_id = $${queryParams.length + 1}`);
+            queryParams.push(parseInt(event_id));
+        }
+
         if (search) {
             conditions.push(`(
                 v.last_name ILIKE $${queryParams.length + 1} OR 
                 v.first_name ILIKE $${queryParams.length + 1} OR 
                 v.middle_name ILIKE $${queryParams.length + 1} OR
-                v.comment ILIKE $${queryParams.length + 1}
+                v.comment ILIKE $${queryParams.length + 1} OR
+                v.barcode ILIKE $${queryParams.length + 1}
             )`);
             queryParams.push(`%${search}%`);
         }
@@ -116,13 +181,14 @@ router.get('/', requireAuth, async (req, res) => {
         }
 
         queryText += `
-            GROUP BY v.id, creator.full_name
+            GROUP BY v.id, creator.full_name, e.name, e.start_date, e.end_date
             ORDER BY v.created_at DESC
             LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
         `;
 
         queryParams.push(limit, offset);
 
+        console.log('🔍 Выполняем SQL запрос посетителей');
         const result = await query(queryText, queryParams);
 
         // Получаем общее количество записей
@@ -130,31 +196,44 @@ router.get('/', requireAuth, async (req, res) => {
         const countParams = [];
 
         if (conditions.length > 0) {
-            countQuery += ' WHERE ' + conditions.join(' AND ');
+            countQuery += ' LEFT JOIN events e ON v.event_id = e.id WHERE ' + conditions.join(' AND ');
             countParams.push(...queryParams.slice(0, -2)); // Убираем limit и offset
         }
 
         const countResult = await query(countQuery, countParams);
         const total = parseInt(countResult.rows[0].total);
 
+        console.log(`✅ Найдено посетителей: ${result.rows.length}, всего: ${total}`);
+
+        // ИСПРАВЛЕНИЕ: Формируем правильный ответ с полной информацией
+        const visitors = result.rows.map(visitor => ({
+            id: visitor.id,
+            visitor_uuid: visitor.visitor_uuid,
+            last_name: visitor.last_name,
+            first_name: visitor.first_name,
+            middle_name: visitor.middle_name,
+            comment: visitor.comment,
+            barcode: visitor.barcode, // ИСПРАВЛЕНИЕ: Добавляем barcode
+            status: visitor.status,
+            created_at: visitor.created_at,
+            updated_at: visitor.updated_at,
+            photo_path: visitor.photo_path,
+            qr_code_path: visitor.qr_code_path,
+            created_by_name: visitor.created_by_name,
+            // ИСПРАВЛЕНИЕ: Добавляем информацию о событии
+            event: visitor.event_name ? {
+                id: visitor.event_id,
+                name: visitor.event_name,
+                start_date: visitor.event_start_date,
+                end_date: visitor.event_end_date
+            } : null,
+            total_scans: parseInt(visitor.total_scans || 0),
+            first_scan_today: parseInt(visitor.first_scan_today || 0) > 0,
+            last_scan: visitor.last_scan
+        }));
+
         res.json({
-            visitors: result.rows.map(visitor => ({
-                id: visitor.id,
-                visitor_uuid: visitor.visitor_uuid,
-                last_name: visitor.last_name,
-                first_name: visitor.first_name,
-                middle_name: visitor.middle_name,
-                comment: visitor.comment,
-                status: visitor.status,
-                created_at: visitor.created_at,
-                updated_at: visitor.updated_at,
-                photo_path: visitor.photo_path,
-                qr_code_path: visitor.qr_code_path,
-                created_by_name: visitor.created_by_name,
-                total_scans: parseInt(visitor.total_scans || 0),
-                first_scan_today: parseInt(visitor.first_scan_today || 0) > 0,
-                last_scan: visitor.last_scan
-            })),
+            visitors: visitors,
             pagination: {
                 page: parseInt(page),
                 limit: parseInt(limit),
@@ -164,8 +243,8 @@ router.get('/', requireAuth, async (req, res) => {
         });
 
     } catch (err) {
-        console.error('Ошибка получения посетителей:', err);
-        res.status(500).json({ error: 'Ошибка сервера' });
+        console.error('❌ Ошибка получения посетителей:', err);
+        res.status(500).json({ error: 'Ошибка сервера при получении посетителей' });
     }
 });
 
@@ -175,10 +254,11 @@ router.get('/:id', requireAuth, async (req, res) => {
         const { id } = req.params;
 
         const result = await query(`
-            SELECT v.*,
+            SELECT v.*, e.name as event_name,
                    creator.full_name as created_by_name,
                    updater.full_name as updated_by_name
             FROM visitors v
+                     LEFT JOIN events e ON v.event_id = e.id
                      LEFT JOIN users creator ON v.created_by = creator.id
                      LEFT JOIN users updater ON v.updated_by = updater.id
             WHERE v.id = $1
@@ -197,25 +277,26 @@ router.get('/:id', requireAuth, async (req, res) => {
             first_name: visitor.first_name,
             middle_name: visitor.middle_name,
             comment: visitor.comment,
+            barcode: visitor.barcode, // ИСПРАВЛЕНИЕ: Добавляем barcode
             status: visitor.status,
             created_at: visitor.created_at,
             updated_at: visitor.updated_at,
             photo_path: visitor.photo_path,
             qr_code_path: visitor.qr_code_path,
+            event_name: visitor.event_name,
             created_by_name: visitor.created_by_name,
             updated_by_name: visitor.updated_by_name
         });
 
     } catch (err) {
-        console.error('Ошибка получения посетителя:', err);
+        console.error('❌ Ошибка получения посетителя:', err);
         res.status(500).json({ error: 'Ошибка сервера' });
     }
 });
 
-// Создать нового посетителя (правильный маршрут)
+// ИСПРАВЛЕНИЕ: Создать нового посетителя с правильной генерацией barcode
 router.post('/', requireAuth, upload.single('photo'), visitorValidation, async (req, res) => {
     try {
-        // Проверка валидации
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.status(400).json({
@@ -224,24 +305,48 @@ router.post('/', requireAuth, upload.single('photo'), visitorValidation, async (
             });
         }
 
-        const { lastName, firstName, middleName, comment } = req.body;
+        const { lastName, firstName, middleName, comment, eventId, barcode } = req.body;
         const photo_path = req.file ? req.file.path : null;
         const visitor_uuid = uuidv4();
 
+        // ИСПРАВЛЕНИЕ: Генерируем barcode если не передан
+        const finalBarcode = barcode && barcode.trim() ? barcode.trim() : generateBarcode();
+
+        console.log('➕ Создание посетителя:', {
+            name: `${lastName} ${firstName}`,
+            eventId,
+            barcode: finalBarcode
+        });
+
         const result = await transaction(async (client) => {
+            // Проверяем уникальность barcode
+            if (finalBarcode) {
+                const barcodeCheck = await client.query(
+                    'SELECT id FROM visitors WHERE barcode = $1',
+                    [finalBarcode]
+                );
+
+                if (barcodeCheck.rows.length > 0) {
+                    throw new Error('Посетитель с таким штрихкодом уже существует');
+                }
+            }
+
             // Создаем посетителя
             const visitorResult = await client.query(`
                 INSERT INTO visitors (
                     visitor_uuid, last_name, first_name, middle_name,
-                    comment, photo_path, status, created_by
-                ) VALUES ($1, $2, $3, $4, $5, $6, 'active', $7)
-                    RETURNING id
+                    comment, photo_path, barcode, event_id, status, created_by
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9)
+                    RETURNING id, visitor_uuid, barcode
             `, [
-                visitor_uuid, lastName, firstName,
-                middleName, comment, photo_path, req.user.id
+                visitor_uuid, lastName, firstName, middleName,
+                comment, photo_path, finalBarcode,
+                eventId ? parseInt(eventId) : null,
+                req.user.id
             ]);
 
             const visitorId = visitorResult.rows[0].id;
+            const createdBarcode = visitorResult.rows[0].barcode;
 
             // Генерируем QR код
             const qrData = `${req.protocol}://${req.get('host')}/scan/${visitor_uuid}`;
@@ -268,33 +373,46 @@ router.post('/', requireAuth, upload.single('photo'), visitorValidation, async (
                 [qrCodePath, visitorId]
             );
 
-            return visitorId;
+            return { visitorId, createdBarcode };
         });
 
-        // Получаем созданного посетителя
-        const createdVisitor = await query(
-            'SELECT * FROM visitors WHERE id = $1',
-            [result]
-        );
+        // Получаем созданного посетителя с полной информацией
+        const createdVisitorResult = await query(`
+            SELECT v.*, e.name as event_name
+            FROM visitors v
+            LEFT JOIN events e ON v.event_id = e.id
+            WHERE v.id = $1
+        `, [result.visitorId]);
+
+        const createdVisitor = createdVisitorResult.rows[0];
+
+        console.log('✅ Посетитель создан успешно:', createdVisitor.barcode);
 
         res.status(201).json({
             message: 'Посетитель успешно создан',
             visitor: {
-                id: createdVisitor.rows[0].id,
-                visitor_uuid: createdVisitor.rows[0].visitor_uuid,
-                last_name: createdVisitor.rows[0].last_name,
-                first_name: createdVisitor.rows[0].first_name,
-                middle_name: createdVisitor.rows[0].middle_name,
-                comment: createdVisitor.rows[0].comment,
-                status: createdVisitor.rows[0].status,
-                photo_path: createdVisitor.rows[0].photo_path,
-                qr_code_path: createdVisitor.rows[0].qr_code_path,
-                created_at: createdVisitor.rows[0].created_at
+                id: createdVisitor.id,
+                visitor_uuid: createdVisitor.visitor_uuid,
+                last_name: createdVisitor.last_name,
+                first_name: createdVisitor.first_name,
+                middle_name: createdVisitor.middle_name,
+                comment: createdVisitor.comment,
+                barcode: createdVisitor.barcode, // ИСПРАВЛЕНИЕ: Возвращаем barcode
+                status: createdVisitor.status,
+                photo_path: createdVisitor.photo_path,
+                qr_code_path: createdVisitor.qr_code_path,
+                event_name: createdVisitor.event_name,
+                created_at: createdVisitor.created_at
             }
         });
 
     } catch (err) {
-        console.error('Ошибка создания посетителя:', err);
+        console.error('❌ Ошибка создания посетителя:', err);
+
+        if (err.message.includes('уже существует')) {
+            return res.status(400).json({ error: err.message });
+        }
+
         res.status(500).json({ error: 'Ошибка сервера при создании посетителя' });
     }
 });
@@ -302,7 +420,6 @@ router.post('/', requireAuth, upload.single('photo'), visitorValidation, async (
 // Обновить посетителя
 router.put('/:id', requireAuth, canModifyVisitor, upload.single('photo'), visitorValidation, async (req, res) => {
     try {
-        // Проверка валидации
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.status(400).json({
@@ -312,7 +429,7 @@ router.put('/:id', requireAuth, canModifyVisitor, upload.single('photo'), visito
         }
 
         const { id } = req.params;
-        const { lastName, firstName, middleName, comment, status } = req.body;
+        const { lastName, firstName, middleName, comment, status, barcode } = req.body;
 
         // Проверяем существование посетителя
         const existingVisitor = await query('SELECT * FROM visitors WHERE id = $1', [id]);
@@ -329,17 +446,18 @@ router.put('/:id', requireAuth, canModifyVisitor, upload.single('photo'), visito
         }
 
         const finalStatus = status || existingVisitor.rows[0].status;
+        const finalBarcode = barcode || existingVisitor.rows[0].barcode;
 
         const result = await query(`
             UPDATE visitors SET
                                 last_name = $1, first_name = $2, middle_name = $3,
-                                comment = $4, photo_path = $5, status = $6,
-                                updated_at = CURRENT_TIMESTAMP, updated_by = $7
-            WHERE id = $8
+                                comment = $4, photo_path = $5, status = $6, barcode = $7,
+                                updated_at = CURRENT_TIMESTAMP, updated_by = $8
+            WHERE id = $9
                 RETURNING *
         `, [
             lastName, firstName, middleName, comment,
-            photo_path, finalStatus, req.user.id, id
+            photo_path, finalStatus, finalBarcode, req.user.id, id
         ]);
 
         res.json({
@@ -351,6 +469,7 @@ router.put('/:id', requireAuth, canModifyVisitor, upload.single('photo'), visito
                 first_name: result.rows[0].first_name,
                 middle_name: result.rows[0].middle_name,
                 comment: result.rows[0].comment,
+                barcode: result.rows[0].barcode,
                 status: result.rows[0].status,
                 photo_path: result.rows[0].photo_path,
                 qr_code_path: result.rows[0].qr_code_path,
@@ -359,7 +478,7 @@ router.put('/:id', requireAuth, canModifyVisitor, upload.single('photo'), visito
         });
 
     } catch (err) {
-        console.error('Ошибка обновления посетителя:', err);
+        console.error('❌ Ошибка обновления посетителя:', err);
         res.status(500).json({ error: 'Ошибка сервера при обновлении посетителя' });
     }
 });
@@ -397,18 +516,18 @@ router.patch('/:id/status', requireAuth, requireRole(['admin', 'moderator']), as
         });
 
     } catch (err) {
-        console.error('Ошибка изменения статуса посетителя:', err);
+        console.error('❌ Ошибка изменения статуса посетителя:', err);
         res.status(500).json({ error: 'Ошибка сервера' });
     }
 });
 
-// Получить QR код посетителя
+// ИСПРАВЛЕНИЕ: Получить QR код посетителя
 router.get('/:id/qr', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
 
         const result = await query(
-            'SELECT qr_code_path, visitor_uuid, last_name, first_name, middle_name FROM visitors WHERE id = $1',
+            'SELECT qr_code_path, visitor_uuid, last_name, first_name, middle_name, barcode FROM visitors WHERE id = $1',
             [id]
         );
 
@@ -441,7 +560,7 @@ router.get('/:id/qr', requireAuth, async (req, res) => {
         }
 
     } catch (err) {
-        console.error('Ошибка получения QR кода:', err);
+        console.error('❌ Ошибка получения QR кода:', err);
         res.status(500).json({ error: 'Ошибка сервера' });
     }
 });
@@ -460,7 +579,7 @@ router.delete('/:id', requireAuth, requireRole(['admin']), async (req, res) => {
         res.json({ message: 'Посетитель успешно удален' });
 
     } catch (err) {
-        console.error('Ошибка удаления посетителя:', err);
+        console.error('❌ Ошибка удаления посетителя:', err);
         res.status(500).json({ error: 'Ошибка сервера при удалении посетителя' });
     }
 });
@@ -479,7 +598,7 @@ router.get('/:id/scans', requireAuth, async (req, res) => {
                      LEFT JOIN users u ON s.scanned_by = u.id
             WHERE s.visitor_id = $1
             ORDER BY s.scanned_at DESC
-            LIMIT $2 OFFSET $3
+                LIMIT $2 OFFSET $3
         `, [id, limit, offset]);
 
         const countResult = await query(
@@ -508,7 +627,7 @@ router.get('/:id/scans', requireAuth, async (req, res) => {
         });
 
     } catch (err) {
-        console.error('Ошибка получения истории сканирований:', err);
+        console.error('❌ Ошибка получения истории сканирований:', err);
         res.status(500).json({ error: 'Ошибка сервера' });
     }
 });
@@ -535,13 +654,15 @@ router.get('/stats/overview', requireAuth, async (req, res) => {
         `);
 
         const recentActivity = await query(`
-            SELECT s.*, v.last_name, v.first_name, v.middle_name, u.full_name as scanned_by_name
+            SELECT s.*, v.last_name, v.first_name, v.middle_name,
+                   e.name as event_name, u.full_name as scanned_by_name
             FROM scans s
-            JOIN visitors v ON s.visitor_id = v.id
-            LEFT JOIN users u ON s.scanned_by = u.id
+                     JOIN visitors v ON s.visitor_id = v.id
+                     LEFT JOIN events e ON v.event_id = e.id
+                     LEFT JOIN users u ON s.scanned_by = u.id
             WHERE s.scan_date >= CURRENT_DATE - INTERVAL '7 days'
             ORDER BY s.scanned_at DESC
-            LIMIT 10
+                LIMIT 10
         `);
 
         res.json({
@@ -552,7 +673,7 @@ router.get('/stats/overview', requireAuth, async (req, res) => {
         });
 
     } catch (err) {
-        console.error('Ошибка получения статистики:', err);
+        console.error('❌ Ошибка получения статистики:', err);
         res.status(500).json({ error: 'Ошибка сервера' });
     }
 });
