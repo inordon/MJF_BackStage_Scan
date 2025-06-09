@@ -306,18 +306,7 @@ module.exports = {
     canBlockVisitor,
     canManageUsers,
     validateVisitorUUID,
-    canExportData,
     canExportScanStatistics,
     checkExportLimits,
     logExportAction
-};
-module.exports = {
-    requireAuth,
-    requireRole,
-    requireScanAuth,
-    logUserAction,
-    canModifyVisitor,
-    canBlockVisitor,
-    canManageUsers,
-    validateVisitorUUID
 };
