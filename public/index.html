@@ -45,6 +45,7 @@
             </select>
             <button onclick="app.visitors.filter()">🔍 Найти</button>
             <button onclick="app.visitors.resetFilters()">🔄 Сброс</button>
+            <button onclick="app.events.loadActiveForFilters()" title="Обновить список событий">🔄 События</button>
         </div>
 
         <div class="table-container">
@@ -122,8 +123,11 @@
             this.setupEventListeners();
 
             if (await this.auth.check()) {
+                // Сначала загружаем события для фильтров
+                await this.events.loadActiveForFilters();
+
+                // Затем загружаем остальные данные
                 await Promise.all([
-                    this.events.loadActiveForFilters(), // Загружаем события для фильтров
                     this.visitors.load(),
                     this.stats.load()
                 ]);
@@ -160,8 +164,9 @@
 
             // Загрузка данных для вкладки
             const loaders = {
-                visitors: () => {
-                    this.events.loadActiveForFilters(); // Обновляем фильтр событий
+                visitors: async () => {
+                    console.log('Переход на вкладку посетителей - обновляем фильтр событий');
+                    await this.events.loadActiveForFilters(); // Обновляем фильтр событий
                     this.visitors.load();
                 },
                 'add-visitor': () => this.events.loadActiveForForm(),
@@ -169,7 +174,10 @@
                 stats: () => this.stats.load(),
                 admin: () => this.admin.load()
             };
-            loaders[tab]?.();
+
+            if (loaders[tab]) {
+                loaders[tab]();
+            }
         },
 
         // Авторизация
@@ -372,6 +380,22 @@
                 this.load(1);
             },
 
+            // Функция для отладки фильтра событий
+            debugEventFilter() {
+                const filter = document.getElementById('event-filter');
+                console.log('🔍 Отладка фильтра событий:');
+                console.log('- Элемент найден:', !!filter);
+                console.log('- Количество опций:', filter ? filter.options.length : 0);
+                console.log('- Содержимое:', filter ? filter.innerHTML : 'N/A');
+
+                if (filter && filter.options.length > 0) {
+                    console.log('- Опции:');
+                    for (let i = 0; i < filter.options.length; i++) {
+                        console.log(`  ${i}: ${filter.options[i].text} (value: ${filter.options[i].value})`);
+                    }
+                }
+            },
+
             resetForm() {
                 document.getElementById('visitor-form').reset();
                 document.getElementById('qr-result').classList.add('hidden');
@@ -388,27 +412,50 @@
 
                     if (!res.ok) {
                         const errorData = await res.json().catch(() => ({ error: 'Неизвестная ошибка' }));
+                        console.error('Ошибка загрузки событий:', errorData);
                         throw new Error(errorData.error || `HTTP ${res.status}`);
                     }
 
                     const data = await res.json();
                     console.log('Активные события загружены для фильтра:', data);
 
+                    // Проверяем, что элемент существует
                     const filter = document.getElementById('event-filter');
-                    if (filter) {
-                        filter.innerHTML = '<option value="">Все события</option>';
-
-                        if (data.events && data.events.length > 0) {
-                            data.events.forEach(event => {
-                                const option = new Option(event.name, event.id);
-                                filter.appendChild(option);
-                            });
-                        }
+                    if (!filter) {
+                        console.error('Элемент event-filter не найден в DOM');
+                        return;
                     }
 
-                    console.log('Фильтр событий обновлен');
+                    // Очищаем и заполняем фильтр
+                    filter.innerHTML = '<option value="">Все события</option>';
+
+                    if (data.events && Array.isArray(data.events) && data.events.length > 0) {
+                        data.events.forEach(event => {
+                            const option = document.createElement('option');
+                            option.value = event.id;
+                            option.textContent = event.name;
+                            filter.appendChild(option);
+                        });
+                        console.log(`Добавлено ${data.events.length} событий в фильтр`);
+                    } else {
+                        console.log('Нет активных событий для отображения');
+                        const option = document.createElement('option');
+                        option.value = '';
+                        option.textContent = 'Нет активных событий';
+                        option.disabled = true;
+                        filter.appendChild(option);
+                    }
+
+                    console.log('Фильтр событий обновлен успешно');
                 } catch (err) {
                     console.error('Ошибка загрузки активных событий для фильтра:', err);
+
+                    // Показываем ошибку в фильтре
+                    const filter = document.getElementById('event-filter');
+                    if (filter) {
+                        filter.innerHTML = '<option value="">Ошибка загрузки событий</option>';
+                    }
+
                     app.showAlert('error', 'Ошибка загрузки событий для фильтра: ' + err.message);
                 }
             },
@@ -421,27 +468,50 @@
 
                     if (!res.ok) {
                         const errorData = await res.json().catch(() => ({ error: 'Неизвестная ошибка' }));
+                        console.error('Ошибка загрузки событий для формы:', errorData);
                         throw new Error(errorData.error || `HTTP ${res.status}`);
                     }
 
                     const data = await res.json();
                     console.log('Активные события загружены для формы:', data);
 
+                    // Проверяем, что элемент существует
                     const select = document.querySelector('#visitor-form select[name="eventId"]');
-                    if (select) {
-                        select.innerHTML = '<option value="">Выберите событие</option>';
-
-                        if (data.events && data.events.length > 0) {
-                            data.events.forEach(event => {
-                                const option = new Option(event.name, event.id);
-                                select.appendChild(option);
-                            });
-                        }
+                    if (!select) {
+                        console.error('Элемент select[name="eventId"] не найден в форме');
+                        return;
                     }
 
-                    console.log('Форма событий обновлена');
+                    // Очищаем и заполняем форму
+                    select.innerHTML = '<option value="">Выберите событие</option>';
+
+                    if (data.events && Array.isArray(data.events) && data.events.length > 0) {
+                        data.events.forEach(event => {
+                            const option = document.createElement('option');
+                            option.value = event.id;
+                            option.textContent = event.name;
+                            select.appendChild(option);
+                        });
+                        console.log(`Добавлено ${data.events.length} событий в форму`);
+                    } else {
+                        console.log('Нет активных событий для формы');
+                        const option = document.createElement('option');
+                        option.value = '';
+                        option.textContent = 'Нет активных событий';
+                        option.disabled = true;
+                        select.appendChild(option);
+                    }
+
+                    console.log('Форма событий обновлена успешно');
                 } catch (err) {
                     console.error('Ошибка загрузки активных событий для формы:', err);
+
+                    // Показываем ошибку в форме
+                    const select = document.querySelector('#visitor-form select[name="eventId"]');
+                    if (select) {
+                        select.innerHTML = '<option value="">Ошибка загрузки событий</option>';
+                    }
+
                     app.showAlert('error', 'Ошибка загрузки событий для формы: ' + err.message);
                 }
             },
@@ -606,8 +676,8 @@
                         if (res.ok) {
                             app.showAlert('success', 'Событие создано успешно');
                             this.load();
-                            this.loadActiveForFilters(); // Обновляем фильтр на вкладке посетителей
-                            this.loadActiveForForm(); // Обновляем форму добавления
+                            await this.loadActiveForFilters(); // Обновляем фильтр на вкладке посетителей
+                            await this.loadActiveForForm(); // Обновляем форму добавления
                         } else {
                             throw new Error(data.error || 'Ошибка создания события');
                         }
@@ -672,8 +742,8 @@
                     if (res.ok) {
                         app.showAlert('success', data.message);
                         this.load();
-                        this.loadActiveForFilters(); // Обновляем фильтр
-                        this.loadActiveForForm(); // Обновляем форму
+                        await this.loadActiveForFilters(); // Обновляем фильтр
+                        await this.loadActiveForForm(); // Обновляем форму
                     } else {
                         throw new Error(data.error || 'Ошибка изменения статуса');
                     }
@@ -693,8 +763,8 @@
                     if (res.ok) {
                         app.showAlert('success', data.message);
                         this.load();
-                        this.loadActiveForFilters(); // Обновляем фильтр
-                        this.loadActiveForForm(); // Обновляем форму
+                        await this.loadActiveForFilters(); // Обновляем фильтр
+                        await this.loadActiveForForm(); // Обновляем форму
                     } else {
                         throw new Error(data.error || 'Ошибка удаления события');
                     }
