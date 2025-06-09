@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Статистика - Система управления посетителями</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+    <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" href="/css/components.css">
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>📊 Статистика системы</h1>
+        <div class="user-info">
+            <div class="user-badge" id="user-badge">Загрузка...</div>
+            <a href="/" class="back-btn">← К списку</a>
+        </div>
+    </div>
+
+    <nav class="main-nav">
+        <a href="/" class="nav-link">📋 Посетители</a>
+        <a href="/visitors.html" class="nav-link">➕ Добавить</a>
+        <a href="/events.html" class="nav-link">🎯 События</a>
+        <a href="/scanner.html" class="nav-link">📱 Сканер</a>
+        <a href="/stats.html" class="nav-link active">📊 Статистика</a>
+    </nav>
+
+    <!-- Управление статистикой -->
+    <div class="stats-controls">
+        <button onclick="stats.refresh()" class="primary-btn">🔄 Обновить</button>
+        <button onclick="stats.exportStats()" class="secondary-btn" id="export-btn">📥 Экспорт</button>
+        <select id="period-select" onchange="stats.changePeriod()">
+            <option value="today">Сегодня</option>
+            <option value="week" selected>Неделя</option>
+            <option value="month">Месяц</option>
+            <option value="all">Все время</option>
+        </select>
+    </div>
+
+    <!-- Общая статистика -->
+    <div class="stats-overview">
+        <h2>📈 Общая статистика</h2>
+        <div class="stats-grid" id="overview-stats">
+            <!-- Карточки статистики -->
+            <div class="stat-card">
+                <div class="stat-number" id="total-visitors">0</div>
+                <div class="stat-label">Всего посетителей</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="active-visitors">0</div>
+                <div class="stat-label">Активных</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="today-scans">0</div>
+                <div class="stat-label">Сканирований сегодня</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="total-scans">0</div>
+                <div class="stat-label">Всего сканирований</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Статистика по событиям -->
+    <div class="stats-section">
+        <h3>🎯 Статистика по событиям</h3>
+        <div class="table-container">
+            <table id="events-stats-table">
+                <thead>
+                <tr>
+                    <th>Событие</th>
+                    <th>Посетители</th>
+                    <th>Сканирования</th>
+                    <th>Сегодня</th>
+                    <th>Статус</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr>
+                    <td colspan="5" class="loading-cell">Загрузка...</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Активность по дням -->
+    <div class="stats-section">
+        <h3>📅 Активность по дням</h3>
+        <div class="daily-stats" id="daily-stats">
+            <!-- Простая таблица вместо графика -->
+            <div class="table-container">
+                <table id="daily-activity-table">
+                    <thead>
+                    <tr>
+                        <th>Дата</th>
+                        <th>Сканирования</th>
+                        <th>Уникальные посетители</th>
+                        <th>Первые визиты</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <tr>
+                        <td colspan="4" class="loading-cell">Загрузка...</td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Активность по часам (только для сегодня) -->
+    <div class="stats-section" id="hourly-stats-section">
+        <h3>🕐 Активность по часам (сегодня)</h3>
+        <div class="hourly-stats">
+            <div class="table-container">
+                <table id="hourly-activity-table">
+                    <thead>
+                    <tr>
+                        <th>Час</th>
+                        <th>Сканирования</th>
+                        <th>Уникальные посетители</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <tr>
+                        <td colspan="3" class="loading-cell">Загрузка...</td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Топ посетителей -->
+    <div class="stats-section">
+        <h3>👑 Топ активных посетителей</h3>
+        <div class="table-container">
+            <table id="top-visitors-table">
+                <thead>
+                <tr>
+                    <th>#</th>
+                    <th>ФИО</th>
+                    <th>Событие</th>
+                    <th>Сканирования</th>
+                    <th>Последнее сканирование</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr>
+                    <td colspan="5" class="loading-cell">Загрузка...</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Сводка по типам сканирований -->
+    <div class="stats-section">
+        <h3>📱 Типы сканирований</h3>
+        <div class="scan-types-stats">
+            <div class="stats-grid">
+                <div class="stat-detail-card">
+                    <h4>🆕 Первые сканирования</h4>
+                    <div class="stat-number" id="first-scans">0</div>
+                    <small>Новые посетители</small>
+                </div>
+                <div class="stat-detail-card">
+                    <h4>🔄 Повторные сканирования</h4>
+                    <div class="stat-number" id="repeat-scans">0</div>
+                    <small>Возвращающиеся посетители</small>
+                </div>
+                <div class="stat-detail-card">
+                    <h4>⚠️ Дубликаты</h4>
+                    <div class="stat-number" id="duplicate-scans">0</div>
+                    <small>Быстрые пересканирования</small>
+                </div>
+                <div class="stat-detail-card">
+                    <h4>🚫 Заблокированные</h4>
+                    <div class="stat-number" id="blocked-attempts">0</div>
+                    <small>Попытки заблокированных</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Последние активности -->
+    <div class="stats-section">
+        <h3>🕒 Последняя активность</h3>
+        <div class="recent-activity" id="recent-activity">
+            <div class="activity-list">
+                <div class="loading">Загрузка последних активностей...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Время обновления -->
+    <div class="update-info">
+        <small>Последнее обновление: <span id="last-update">-</span></small>
+    </div>
+</div>
+
+<!-- Подключаем скрипты -->
+<script src="/js/utils.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/stats.js"></script>
+<script src="/js/app.js"></script>
+
+<script>
+    // Автообновление каждые 30 секунд для статистики в реальном времени
+    let autoRefreshInterval;
+
+    function startAutoRefresh() {
+        autoRefreshInterval = setInterval(() => {
+            if (document.visibilityState === 'visible') {
+                stats.refreshQuietly(); // Обновление без показа индикатора загрузки
+            }
+        }, 30000);
+    }
+
+    function stopAutoRefresh() {
+        if (autoRefreshInterval) {
+            clearInterval(autoRefreshInterval);
+            autoRefreshInterval = null;
+        }
+    }
+
+    // Запускаем автообновление при загрузке страницы
+    document.addEventListener('DOMContentLoaded', () => {
+        startAutoRefresh();
+    });
+
+    // Останавливаем автообновление при уходе со страницы
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+            stopAutoRefresh();
+        } else {
+            startAutoRefresh();
+        }
+    });
+
+    // Очищаем интервал при закрытии страницы
+    window.addEventListener('beforeunload', () => {
+        stopAutoRefresh();
+    });
+</script>
+</body>
+</html>

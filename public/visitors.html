@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Добавить посетителя - Система управления посетителями</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👥</text></svg>">
+    <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" href="/css/components.css">
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>➕ Добавить посетителя</h1>
+        <div class="user-info">
+            <div class="user-badge" id="user-badge">Загрузка...</div>
+            <a href="/" class="back-btn">← К списку</a>
+        </div>
+    </div>
+
+    <nav class="main-nav">
+        <a href="/" class="nav-link">📋 Посетители</a>
+        <a href="/visitors.html" class="nav-link active">➕ Добавить</a>
+        <a href="/events.html" class="nav-link">🎯 События</a>
+        <a href="/scanner.html" class="nav-link">📱 Сканер</a>
+        <a href="/stats.html" class="nav-link">📊 Статистика</a>
+    </nav>
+
+    <div class="form-container">
+        <form id="visitor-form" enctype="multipart/form-data">
+            <div class="form-section">
+                <h3>📋 Основная информация</h3>
+
+                <div class="form-group">
+                    <label for="eventId">Событие *</label>
+                    <select name="eventId" id="eventId" required>
+                        <option value="">🔄 Загрузка событий...</option>
+                    </select>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="lastName">Фамилия *</label>
+                        <input name="lastName" id="lastName" placeholder="Иванов" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="firstName">Имя *</label>
+                        <input name="firstName" id="firstName" placeholder="Иван" required>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="middleName">Отчество</label>
+                    <input name="middleName" id="middleName" placeholder="Иванович">
+                </div>
+
+                <div class="form-group">
+                    <label for="comment">Комментарий</label>
+                    <textarea name="comment" id="comment" placeholder="Дополнительная информация о посетителе" rows="3"></textarea>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h3>📊 Штрихкод</h3>
+
+                <div class="form-group">
+                    <label for="barcode">Штрихкод (необязательно)</label>
+                    <input name="barcode" id="barcode" placeholder="Будет сгенерирован автоматически" pattern="[A-Z0-9\-_]+">
+                    <small class="form-hint">Оставьте пустым для автоматической генерации. Разрешены только заглавные буквы, цифры, дефисы и подчеркивания.</small>
+                    <button type="button" onclick="visitors.generateBarcode()" class="secondary-btn">🎲 Сгенерировать</button>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h3>📷 Фотография</h3>
+
+                <div class="form-group">
+                    <label for="photo">Фото посетителя</label>
+                    <input type="file" name="photo" id="photo" accept="image/*">
+                    <small class="form-hint">Максимальный размер: 5MB. Поддерживаемые форматы: JPG, PNG, GIF</small>
+                </div>
+
+                <div id="photo-preview" class="photo-preview hidden">
+                    <img id="preview-image" alt="Предпросмотр фото">
+                    <button type="button" onclick="visitors.removePhoto()" class="remove-photo">✕</button>
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="primary-btn">
+                    <span class="btn-text">✅ Создать посетителя</span>
+                    <span class="btn-loading hidden">🔄 Создание...</span>
+                </button>
+                <button type="button" onclick="visitors.resetForm()" class="secondary-btn">🔄 Очистить форму</button>
+            </div>
+        </form>
+
+        <!-- Результат создания -->
+        <div id="creation-result" class="creation-result hidden">
+            <div class="success-card">
+                <h3>🎉 Посетитель создан успешно!</h3>
+                <div id="visitor-info"></div>
+
+                <div class="qr-container">
+                    <h4>📱 QR-код для посетителя:</h4>
+                    <canvas id="qr-canvas"></canvas>
+                    <div class="qr-actions">
+                        <button onclick="visitors.downloadQR()" class="primary-btn">📥 Скачать QR-код</button>
+                        <button onclick="visitors.printQR()" class="secondary-btn">🖨️ Печать</button>
+                    </div>
+                </div>
+
+                <div class="next-actions">
+                    <button onclick="visitors.createAnother()" class="primary-btn">➕ Добавить еще</button>
+                    <a href="/" class="secondary-btn">📋 К списку посетителей</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Подключаем скрипты -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="/js/utils.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/visitors.js"></script>
+<script src="/js/app.js"></script>
+
+<script>
+    // Предпросмотр фото
+    document.getElementById('photo').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            if (file.size > 5 * 1024 * 1024) {
+                utils.showAlert('error', 'Файл слишком большой. Максимум 5MB.');
+                e.target.value = '';
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const preview = document.getElementById('photo-preview');
+                const img = document.getElementById('preview-image');
+                img.src = e.target.result;
+                preview.classList.remove('hidden');
+            };
+            reader.readAsDataURL(file);
+        }
+    });
+
+    // Валидация штрихкода
+    document.getElementById('barcode').addEventListener('input', function(e) {
+        const value = e.target.value.toUpperCase();
+        e.target.value = value;
+
+        if (value && !utils.validateBarcode(value)) {
+            e.target.setCustomValidity('Некорректный формат штрихкода');
+        } else {
+            e.target.setCustomValidity('');
+        }
+    });
+</script>
+</body>
+</html>

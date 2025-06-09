@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>События - Система управления посетителями</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>">
+    <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" href="/css/components.css">
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>🎯 Управление событиями</h1>
+        <div class="user-info">
+            <div class="user-badge" id="user-badge">Загрузка...</div>
+            <a href="/" class="back-btn">← К списку</a>
+        </div>
+    </div>
+
+    <nav class="main-nav">
+        <a href="/" class="nav-link">📋 Посетители</a>
+        <a href="/visitors.html" class="nav-link">➕ Добавить</a>
+        <a href="/events.html" class="nav-link active">🎯 События</a>
+        <a href="/scanner.html" class="nav-link">📱 Сканер</a>
+        <a href="/stats.html" class="nav-link">📊 Статистика</a>
+    </nav>
+
+    <!-- Управление событиями -->
+    <div class="page-actions">
+        <button onclick="events.showCreateForm()" class="primary-btn" id="create-event-btn">
+            ➕ Создать событие
+        </button>
+        <button onclick="events.refresh()" class="secondary-btn">
+            🔄 Обновить
+        </button>
+    </div>
+
+    <!-- Фильтры -->
+    <div class="filters-section">
+        <select id="status-filter">
+            <option value="">Все статусы</option>
+            <option value="active">Активные</option>
+            <option value="inactive">Неактивные</option>
+            <option value="completed">Завершенные</option>
+            <option value="cancelled">Отмененные</option>
+        </select>
+        <input type="text" id="search-input" placeholder="Поиск по названию или месту...">
+        <button onclick="events.filter()" class="secondary-btn">🔍 Найти</button>
+        <button onclick="events.resetFilters()" class="secondary-btn">🔄 Сброс</button>
+    </div>
+
+    <!-- Список событий -->
+    <div class="events-container">
+        <div id="events-list">
+            <div class="loading">Загрузка событий...</div>
+        </div>
+    </div>
+
+    <!-- Статистика событий -->
+    <div class="events-stats hidden" id="events-stats">
+        <h3>📊 Статистика событий</h3>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-number" id="total-events">0</div>
+                <div class="stat-label">Всего событий</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="active-events">0</div>
+                <div class="stat-label">Активных</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="total-visitors">0</div>
+                <div class="stat-label">Всего посетителей</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="total-scans">0</div>
+                <div class="stat-label">Всего сканирований</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно создания события -->
+<div id="create-event-modal" class="modal hidden">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>➕ Создание события</h3>
+            <button onclick="events.hideCreateForm()" class="close-btn">✕</button>
+        </div>
+
+        <form id="event-form">
+            <div class="form-group">
+                <label for="event-name">Название события *</label>
+                <input name="name" id="event-name" placeholder="IT-Конференция 2024" required>
+            </div>
+
+            <div class="form-group">
+                <label for="event-description">Описание</label>
+                <textarea name="description" id="event-description" placeholder="Краткое описание события" rows="3"></textarea>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="start-date">Дата начала *</label>
+                    <input name="start_date" id="start-date" type="date" required>
+                </div>
+                <div class="form-group">
+                    <label for="end-date">Дата окончания *</label>
+                    <input name="end_date" id="end-date" type="date" required>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="event-location">Местоположение</label>
+                <input name="location" id="event-location" placeholder="Москва, ЦВК Экспоцентр">
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="max-participants">Максимум участников</label>
+                    <input name="max_participants" id="max-participants" type="number" min="1" placeholder="Не ограничено">
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input name="registration_required" type="checkbox">
+                        Требуется регистрация
+                    </label>
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button type="submit" class="primary-btn">
+                    <span class="btn-text">✅ Создать событие</span>
+                    <span class="btn-loading hidden">🔄 Создание...</span>
+                </button>
+                <button type="button" onclick="events.hideCreateForm()" class="secondary-btn">
+                    ❌ Отмена
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Модальное окно просмотра события -->
+<div id="event-details-modal" class="modal hidden">
+    <div class="modal-content modal-large">
+        <div class="modal-header">
+            <h3 id="event-details-title">📋 Детали события</h3>
+            <button onclick="events.hideDetailsModal()" class="close-btn">✕</button>
+        </div>
+
+        <div id="event-details-content">
+            <!-- Содержимое загружается динамически -->
+        </div>
+
+        <div class="modal-actions">
+            <button onclick="events.hideDetailsModal()" class="secondary-btn">
+                ❌ Закрыть
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Подключаем скрипты -->
+<script src="/js/utils.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/events.js"></script>
+<script src="/js/app.js"></script>
+
+<script>
+    // Валидация дат
+    document.getElementById('start-date').addEventListener('change', function() {
+        const endDate = document.getElementById('end-date');
+        endDate.min = this.value;
+
+        if (endDate.value && endDate.value < this.value) {
+            endDate.value = this.value;
+        }
+    });
+
+    document.getElementById('end-date').addEventListener('change', function() {
+        const startDate = document.getElementById('start-date');
+        if (this.value < startDate.value) {
+            utils.showAlert('error', 'Дата окончания не может быть раньше даты начала');
+            this.value = startDate.value;
+        }
+    });
+
+    // Устанавливаем минимальную дату как сегодня
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('start-date').min = today;
+    document.getElementById('end-date').min = today;
+
+    // Поиск событий с debounce
+    document.getElementById('search-input').addEventListener('input',
+        utils.debounce(() => events.filter(), 500)
+    );
+</script>
+</body>
+</html>
