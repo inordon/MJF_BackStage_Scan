@@ -194,55 +194,23 @@
         visitors: {
             async load(page = 1) {
                 const params = new URLSearchParams({
-                    page: page || 1,
-                    limit: app.state.pagination.visitors.size || 25,
-                    search: (document.getElementById('search-input')?.value || '').trim(),
-                    status: document.getElementById('status-filter')?.value || '',
-                    event_id: document.getElementById('event-filter')?.value || ''
+                    page,
+                    limit: app.state.pagination.visitors.size,
+                    search: document.getElementById('search-input').value,
+                    status: document.getElementById('status-filter').value,
+                    event_id: document.getElementById('event-filter').value
                 });
 
-                // Удаляем пустые параметры
-                for (const [key, value] of [...params.entries()]) {
-                    if (!value || value === '' || value === 'undefined' || value === 'null') {
-                        params.delete(key);
-                    }
-                }
-
                 try {
-                    console.log('Загрузка посетителей с параметрами:', Object.fromEntries(params));
                     const res = await fetch(`/api/visitors?${params}`);
-
-                    if (!res.ok) {
-                        const errorData = await res.json().catch(() => ({ error: 'Неизвестная ошибка' }));
-                        throw new Error(errorData.error || `HTTP ${res.status}`);
-                    }
-
                     const data = await res.json();
 
-                    app.state.visitors = data.visitors || [];
-                    app.state.pagination.visitors = {
-                        page: data.pagination?.page || 1,
-                        size: data.pagination?.limit || 25,
-                        total: data.pagination?.total || 0,
-                        pages: data.pagination?.pages || 1
-                    };
+                    app.state.visitors = data.visitors;
+                    app.state.pagination.visitors = data.pagination;
 
                     this.render();
                 } catch (err) {
-                    console.error('Ошибка загрузки посетителей:', err);
-                    app.showAlert('error', 'Ошибка загрузки посетителей: ' + err.message);
-
-                    // Показываем сообщение об ошибке в таблице
-                    const container = document.getElementById('visitors-table');
-                    if (container) {
-                        container.innerHTML = `
-                    <div class="empty" style="color: #dc3545;">
-                        <h3>❌ Ошибка загрузки</h3>
-                        <p>${err.message}</p>
-                        <button onclick="app.visitors.load()" style="margin-top: 10px;">🔄 Попробовать снова</button>
-                    </div>
-                `;
-                    }
+                    app.showAlert('error', 'Ошибка загрузки посетителей');
                 }
             },
 
@@ -250,50 +218,44 @@
                 const container = document.getElementById('visitors-table');
                 const visitors = app.state.visitors;
 
-                if (!container) {
-                    console.error('Контейнер visitors-table не найден');
-                    return;
-                }
-
                 document.getElementById('visitors-count').textContent = visitors.length;
 
                 if (visitors.length === 0) {
                     container.innerHTML = '<div class="empty">Посетители не найдены</div>';
-                    document.getElementById('visitors-pagination')?.classList.add('hidden');
                     return;
                 }
 
                 container.innerHTML = `
-            <table>
-                <thead>
-                    <tr>
-                        <th>ФИО</th>
-                        <th>Событие</th>
-                        <th>Статус</th>
-                        <th>Сканирований</th>
-                        <th>Действия</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${visitors.map(v => `
+                <table>
+                    <thead>
                         <tr>
-                            <td>
-                                <strong>${v.last_name} ${v.first_name} ${v.middle_name || ''}</strong>
-                                ${v.comment ? `<br><small>${v.comment}</small>` : ''}
-                            </td>
-                            <td><span class="badge">${v.event?.name || 'Без события'}</span></td>
-                            <td><span class="status-${v.status}">${v.status === 'active' ? 'Активен' : 'Заблокирован'}</span></td>
-                            <td>${v.total_scans} ${v.first_scan_today ? '(сегодня)' : ''}</td>
-                            <td>
-                                <button onclick="app.visitors.downloadQR(${v.id})" title="Скачать QR">📥</button>
-                                <button onclick="app.visitors.toggleStatus(${v.id}, '${v.status}')" title="${v.status === 'active' ? 'Заблокировать' : 'Разблокировать'}">${v.status === 'active' ? '🔒' : '🔓'}</button>
-                                ${app.state.currentUser.role === 'admin' ? `<button onclick="app.visitors.delete(${v.id})" title="Удалить">🗑️</button>` : ''}
-                            </td>
+                            <th>ФИО</th>
+                            <th>Событие</th>
+                            <th>Статус</th>
+                            <th>Сканирований</th>
+                            <th>Действия</th>
                         </tr>
-                    `).join('')}
-                </tbody>
-            </table>
-        `;
+                    </thead>
+                    <tbody>
+                        ${visitors.map(v => `
+                            <tr>
+                                <td>
+                                    <strong>${v.last_name} ${v.first_name} ${v.middle_name || ''}</strong>
+                                    ${v.comment ? `<br><small>${v.comment}</small>` : ''}
+                                </td>
+                                <td><span class="badge">${v.event?.name || 'Без события'}</span></td>
+                                <td><span class="status-${v.status}">${v.status === 'active' ? 'Активен' : 'Заблокирован'}</span></td>
+                                <td>${v.total_scans} ${v.first_scan_today ? '(сегодня)' : ''}</td>
+                                <td>
+                                    <button onclick="app.visitors.downloadQR(${v.id})">📥</button>
+                                    <button onclick="app.visitors.toggleStatus(${v.id}, '${v.status}')">${v.status === 'active' ? '🔒' : '🔓'}</button>
+                                    ${app.state.currentUser.role === 'admin' ? `<button onclick="app.visitors.delete(${v.id})">🗑️</button>` : ''}
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
 
                 app.renderPagination('visitors');
             },
@@ -413,86 +375,293 @@
         events: {
             async loadActive() {
                 try {
+                    console.log('Загрузка активных событий...');
                     const res = await fetch('/api/visitors/events/active');
+
+                    if (!res.ok) {
+                        const errorData = await res.json().catch(() => ({ error: 'Неизвестная ошибка' }));
+                        throw new Error(errorData.error || `HTTP ${res.status}`);
+                    }
+
                     const data = await res.json();
+                    console.log('Активные события загружены:', data);
 
                     const select = document.querySelector('#visitor-form select[name="eventId"]');
                     const filter = document.getElementById('event-filter');
 
                     [select, filter].forEach(el => {
+                        if (!el) return;
+
                         el.innerHTML = el === select ? '<option value="">Выберите событие</option>' : '<option value="">Все события</option>';
-                        data.events.forEach(event => {
-                            const option = new Option(event.name, event.id);
-                            el.appendChild(option);
-                        });
+
+                        if (data.events && data.events.length > 0) {
+                            data.events.forEach(event => {
+                                const option = new Option(event.name, event.id);
+                                el.appendChild(option);
+                            });
+                        }
                     });
+
+                    console.log('Списки событий обновлены');
                 } catch (err) {
-                    app.showAlert('error', 'Ошибка загрузки событий');
+                    console.error('Ошибка загрузки активных событий:', err);
+                    app.showAlert('error', 'Ошибка загрузки событий: ' + err.message);
                 }
             },
 
             async load() {
                 try {
+                    console.log('Загрузка всех событий...');
                     const res = await fetch('/api/events');
-                    const data = await res.json();
 
-                    app.state.events = data.events;
+                    if (!res.ok) {
+                        const errorData = await res.json().catch(() => ({ error: 'Неизвестная ошибка' }));
+                        throw new Error(errorData.error || `HTTP ${res.status}`);
+                    }
+
+                    const data = await res.json();
+                    console.log('События загружены:', data);
+
+                    app.state.events = data.events || [];
                     this.render();
                 } catch (err) {
-                    app.showAlert('error', 'Ошибка загрузки событий');
+                    console.error('Ошибка загрузки событий:', err);
+                    app.showAlert('error', 'Ошибка загрузки событий: ' + err.message);
+
+                    // Показываем сообщение об ошибке в контейнере
+                    const container = document.getElementById('events-list');
+                    if (container) {
+                        container.innerHTML = `
+                    <div class="empty" style="color: #dc3545;">
+                        <h3>❌ Ошибка загрузки событий</h3>
+                        <p>${err.message}</p>
+                        <button onclick="app.events.load()" style="margin-top: 10px;">🔄 Попробовать снова</button>
+                    </div>
+                `;
+                    }
                 }
             },
 
             render() {
                 const container = document.getElementById('events-list');
+                if (!container) {
+                    console.error('Контейнер events-list не найден');
+                    return;
+                }
+
                 const events = app.state.events;
+                console.log('Отрисовка событий:', events);
+
+                if (!events || events.length === 0) {
+                    container.innerHTML = `
+                <div class="empty">
+                    <h3>📋 События не найдены</h3>
+                    <p>Создайте первое событие для управления посетителями</p>
+                    <button onclick="app.events.showCreateForm()" style="margin-top: 15px;">➕ Создать событие</button>
+                </div>
+            `;
+                    return;
+                }
 
                 container.innerHTML = events.map(e => `
-                <div class="event-card">
+            <div class="event-card">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
                     <h3>${e.name}</h3>
-                    <p>${e.description || ''}</p>
-                    <p>📅 ${new Date(e.start_date).toLocaleDateString()} - ${new Date(e.end_date).toLocaleDateString()}</p>
-                    <p>📍 ${e.location || ''}</p>
-                    <div class="stats">
-                        <span>👥 ${e.stats.total_visitors}</span>
-                        <span>📱 ${e.stats.total_scans}</span>
-                        <span>📊 ${e.stats.today_scans}</span>
-                    </div>
+                    <span class="status-${e.status}" style="font-size: 12px; padding: 4px 8px;">
+                        ${this.getStatusText(e.status)}
+                    </span>
                 </div>
-            `).join('');
+
+                ${e.description ? `<p style="color: #666; margin-bottom: 10px;">${e.description}</p>` : ''}
+
+                <div style="margin-bottom: 10px;">
+                    <p><strong>📅 Даты:</strong> ${this.formatDate(e.start_date)} - ${this.formatDate(e.end_date)}</p>
+                    ${e.location ? `<p><strong>📍 Место:</strong> ${e.location}</p>` : ''}
+                    ${e.max_participants ? `<p><strong>👥 Макс. участников:</strong> ${e.max_participants}</p>` : ''}
+                </div>
+
+                <div class="stats">
+                    <span title="Всего посетителей">👥 ${e.stats.total_visitors}</span>
+                    <span title="Активных посетителей">✅ ${e.stats.active_visitors}</span>
+                    <span title="Всего сканирований">📱 ${e.stats.total_scans}</span>
+                    <span title="Сканирований сегодня">📊 ${e.stats.today_scans}</span>
+                </div>
+
+                ${app.state.currentUser.role !== 'skd' ? `
+                    <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
+                        <button onclick="app.events.viewDetails(${e.id})" style="font-size: 12px; padding: 6px 12px;">📋 Подробно</button>
+                        ${app.state.currentUser.role === 'admin' || app.state.currentUser.role === 'moderator' ? `
+                            <button onclick="app.events.showEditForm(${e.id})" style="font-size: 12px; padding: 6px 12px;">✏️ Редактировать</button>
+                            <button onclick="app.events.toggleStatus(${e.id}, '${e.status}')" style="font-size: 12px; padding: 6px 12px;">
+                                ${e.status === 'active' ? '⏸️ Деактивировать' : '▶️ Активировать'}
+                            </button>
+                        ` : ''}
+                        ${app.state.currentUser.role === 'admin' ? `
+                            <button onclick="app.events.delete(${e.id})" style="font-size: 12px; padding: 6px 12px; background: #dc3545;">🗑️ Удалить</button>
+                        ` : ''}
+                    </div>
+                ` : ''}
+            </div>
+        `).join('');
+            },
+
+            getStatusText(status) {
+                const statusMap = {
+                    'active': 'Активно',
+                    'inactive': 'Неактивно',
+                    'completed': 'Завершено',
+                    'cancelled': 'Отменено'
+                };
+                return statusMap[status] || status;
+            },
+
+            formatDate(dateString) {
+                if (!dateString) return '';
+                return new Date(dateString).toLocaleDateString('ru-RU');
             },
 
             showCreateForm() {
                 app.showModal(`
-                <h3>Создание события</h3>
-                <form id="event-form">
-                    <input name="name" placeholder="Название" required>
-                    <textarea name="description" placeholder="Описание"></textarea>
-                    <input name="start_date" type="date" required>
-                    <input name="end_date" type="date" required>
-                    <input name="location" placeholder="Местоположение">
-                    <button type="submit">Создать</button>
-                </form>
-            `, async (formData) => {
+            <h3>Создание события</h3>
+            <form id="event-form">
+                <input name="name" placeholder="Название события" required>
+                <textarea name="description" placeholder="Описание (необязательно)" rows="3"></textarea>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <div>
+                        <label>Дата начала:</label>
+                        <input name="start_date" type="date" required>
+                    </div>
+                    <div>
+                        <label>Дата окончания:</label>
+                        <input name="end_date" type="date" required>
+                    </div>
+                </div>
+                <input name="location" placeholder="Местоположение (необязательно)">
+                <input name="max_participants" type="number" placeholder="Максимум участников (необязательно)" min="1">
+                <label style="display: flex; align-items: center; gap: 10px;">
+                    <input name="registration_required" type="checkbox">
+                    Требуется регистрация
+                </label>
+                <button type="submit">Создать событие</button>
+            </form>
+        `, async (formData) => {
                     try {
+                        const eventData = Object.fromEntries(formData);
+                        eventData.registration_required = formData.get('registration_required') === 'on';
+
+                        // Убираем пустые поля
+                        Object.keys(eventData).forEach(key => {
+                            if (eventData[key] === '' || eventData[key] === null) {
+                                delete eventData[key];
+                            }
+                        });
+
+                        console.log('Создание события:', eventData);
+
                         const res = await fetch('/api/events', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(Object.fromEntries(formData))
+                            body: JSON.stringify(eventData)
                         });
 
+                        const data = await res.json();
+
                         if (res.ok) {
-                            app.showAlert('success', 'Событие создано');
+                            app.showAlert('success', 'Событие создано успешно');
                             this.load();
-                            this.loadActive();
+                            this.loadActive(); // Обновляем списки
                         } else {
-                            const data = await res.json();
-                            app.showAlert('error', data.error);
+                            throw new Error(data.error || 'Ошибка создания события');
                         }
                     } catch (err) {
-                        app.showAlert('error', 'Ошибка создания события');
+                        console.error('Ошибка создания события:', err);
+                        app.showAlert('error', 'Ошибка создания события: ' + err.message);
                     }
                 });
+            },
+
+            async viewDetails(id) {
+                try {
+                    const res = await fetch(`/api/events/${id}`);
+                    const data = await res.json();
+
+                    if (!res.ok) {
+                        throw new Error(data.error || 'Ошибка загрузки события');
+                    }
+
+                    app.showModal(`
+                <h3>📋 ${data.name}</h3>
+                <div style="text-align: left;">
+                    ${data.description ? `<p><strong>Описание:</strong> ${data.description}</p>` : ''}
+                    <p><strong>📅 Период:</strong> ${this.formatDate(data.start_date)} - ${this.formatDate(data.end_date)}</p>
+                    ${data.location ? `<p><strong>📍 Место:</strong> ${data.location}</p>` : ''}
+                    <p><strong>📊 Статус:</strong> ${this.getStatusText(data.status)}</p>
+                    ${data.max_participants ? `<p><strong>👥 Макс. участников:</strong> ${data.max_participants}</p>` : ''}
+                    <p><strong>📝 Регистрация:</strong> ${data.registration_required ? 'Требуется' : 'Не требуется'}</p>
+
+                    <h4 style="margin-top: 20px;">📈 Статистика:</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+                        <div>Всего посетителей: <strong>${data.stats.total_visitors}</strong></div>
+                        <div>Активных: <strong>${data.stats.active_visitors}</strong></div>
+                        <div>Всего сканирований: <strong>${data.stats.total_scans}</strong></div>
+                        <div>Сегодня: <strong>${data.stats.today_scans}</strong></div>
+                    </div>
+
+                    ${data.created_by_name ? `<p style="margin-top: 15px; font-size: 12px; color: #666;">Создано: ${data.created_by_name}</p>` : ''}
+                </div>
+            `);
+                } catch (err) {
+                    console.error('Ошибка просмотра события:', err);
+                    app.showAlert('error', 'Ошибка загрузки данных события: ' + err.message);
+                }
+            },
+
+            async toggleStatus(id, currentStatus) {
+                const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+                const action = newStatus === 'active' ? 'активировать' : 'деактивировать';
+
+                if (!confirm(`Вы уверены, что хотите ${action} это событие?`)) return;
+
+                try {
+                    const res = await fetch(`/api/events/${id}/status`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status: newStatus })
+                    });
+
+                    const data = await res.json();
+
+                    if (res.ok) {
+                        app.showAlert('success', data.message);
+                        this.load();
+                        this.loadActive(); // Обновляем списки
+                    } else {
+                        throw new Error(data.error || 'Ошибка изменения статуса');
+                    }
+                } catch (err) {
+                    console.error('Ошибка изменения статуса события:', err);
+                    app.showAlert('error', 'Ошибка изменения статуса: ' + err.message);
+                }
+            },
+
+            async delete(id) {
+                if (!confirm('Вы уверены, что хотите удалить это событие? Это действие нельзя отменить.')) return;
+
+                try {
+                    const res = await fetch(`/api/events/${id}`, { method: 'DELETE' });
+                    const data = await res.json();
+
+                    if (res.ok) {
+                        app.showAlert('success', data.message);
+                        this.load();
+                        this.loadActive(); // Обновляем списки
+                    } else {
+                        throw new Error(data.error || 'Ошибка удаления события');
+                    }
+                } catch (err) {
+                    console.error('Ошибка удаления события:', err);
+                    app.showAlert('error', 'Ошибка удаления события: ' + err.message);
+                }
             }
         },
 
