@@ -122,7 +122,7 @@
 
             if (await this.auth.check()) {
                 await Promise.all([
-                    this.events.loadActive(),
+                    this.events.loadActiveForFilters(), // Загружаем события для фильтров
                     this.visitors.load(),
                     this.stats.load()
                 ]);
@@ -159,8 +159,11 @@
 
             // Загрузка данных для вкладки
             const loaders = {
-                visitors: () => this.visitors.load(),
-                'add-visitor': () => this.events.loadActive(),
+                visitors: () => {
+                    this.events.loadActiveForFilters(); // Обновляем фильтр событий
+                    this.visitors.load();
+                },
+                'add-visitor': () => this.events.loadActiveForForm(),
                 events: () => this.events.load(),
                 stats: () => this.stats.load(),
                 admin: () => this.admin.load()
@@ -373,9 +376,10 @@
 
         // События
         events: {
-            async loadActive() {
+            // Загрузка активных событий для фильтра на вкладке "Посетители"
+            async loadActiveForFilters() {
                 try {
-                    console.log('Загрузка активных событий...');
+                    console.log('Загрузка активных событий для фильтра...');
                     const res = await fetch('/api/visitors/events/active');
 
                     if (!res.ok) {
@@ -384,28 +388,57 @@
                     }
 
                     const data = await res.json();
-                    console.log('Активные события загружены:', data);
+                    console.log('Активные события загружены для фильтра:', data);
 
-                    const select = document.querySelector('#visitor-form select[name="eventId"]');
                     const filter = document.getElementById('event-filter');
-
-                    [select, filter].forEach(el => {
-                        if (!el) return;
-
-                        el.innerHTML = el === select ? '<option value="">Выберите событие</option>' : '<option value="">Все события</option>';
+                    if (filter) {
+                        filter.innerHTML = '<option value="">Все события</option>';
 
                         if (data.events && data.events.length > 0) {
                             data.events.forEach(event => {
                                 const option = new Option(event.name, event.id);
-                                el.appendChild(option);
+                                filter.appendChild(option);
                             });
                         }
-                    });
+                    }
 
-                    console.log('Списки событий обновлены');
+                    console.log('Фильтр событий обновлен');
                 } catch (err) {
-                    console.error('Ошибка загрузки активных событий:', err);
-                    app.showAlert('error', 'Ошибка загрузки событий: ' + err.message);
+                    console.error('Ошибка загрузки активных событий для фильтра:', err);
+                    app.showAlert('error', 'Ошибка загрузки событий для фильтра: ' + err.message);
+                }
+            },
+
+            // Загрузка активных событий для формы добавления посетителя
+            async loadActiveForForm() {
+                try {
+                    console.log('Загрузка активных событий для формы...');
+                    const res = await fetch('/api/visitors/events/active');
+
+                    if (!res.ok) {
+                        const errorData = await res.json().catch(() => ({ error: 'Неизвестная ошибка' }));
+                        throw new Error(errorData.error || `HTTP ${res.status}`);
+                    }
+
+                    const data = await res.json();
+                    console.log('Активные события загружены для формы:', data);
+
+                    const select = document.querySelector('#visitor-form select[name="eventId"]');
+                    if (select) {
+                        select.innerHTML = '<option value="">Выберите событие</option>';
+
+                        if (data.events && data.events.length > 0) {
+                            data.events.forEach(event => {
+                                const option = new Option(event.name, event.id);
+                                select.appendChild(option);
+                            });
+                        }
+                    }
+
+                    console.log('Форма событий обновлена');
+                } catch (err) {
+                    console.error('Ошибка загрузки активных событий для формы:', err);
+                    app.showAlert('error', 'Ошибка загрузки событий для формы: ' + err.message);
                 }
             },
 
@@ -569,7 +602,8 @@
                         if (res.ok) {
                             app.showAlert('success', 'Событие создано успешно');
                             this.load();
-                            this.loadActive(); // Обновляем списки
+                            this.loadActiveForFilters(); // Обновляем фильтр на вкладке посетителей
+                            this.loadActiveForForm(); // Обновляем форму добавления
                         } else {
                             throw new Error(data.error || 'Ошибка создания события');
                         }
@@ -634,7 +668,8 @@
                     if (res.ok) {
                         app.showAlert('success', data.message);
                         this.load();
-                        this.loadActive(); // Обновляем списки
+                        this.loadActiveForFilters(); // Обновляем фильтр
+                        this.loadActiveForForm(); // Обновляем форму
                     } else {
                         throw new Error(data.error || 'Ошибка изменения статуса');
                     }
@@ -654,7 +689,8 @@
                     if (res.ok) {
                         app.showAlert('success', data.message);
                         this.load();
-                        this.loadActive(); // Обновляем списки
+                        this.loadActiveForFilters(); // Обновляем фильтр
+                        this.loadActiveForForm(); // Обновляем форму
                     } else {
                         throw new Error(data.error || 'Ошибка удаления события');
                     }
