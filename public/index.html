@@ -96,9 +96,14 @@
     <!-- Статистика -->
     <div id="stats" class="content">
         <div style="position: relative;">
-            <button class="export-button" onclick="app.stats.exportStats()">
-                📊 Экспорт статистики
-            </button>
+            <div class="export-buttons-container">
+                <button class="export-button" onclick="app.stats.showExportModal()">
+                    📊 Экспорт статистики
+                </button>
+                <button class="export-button" onclick="app.stats.exportScanStatistics()">
+                    📋 Экспорт сканирований
+                </button>
+            </div>
             <div id="stats-overview" class="stats-grid"></div>
         </div>
         <div id="stats-tables"></div>
@@ -1686,7 +1691,233 @@
                 return icons[scanType] || '📱';
             },
 
-            // Метод для экспорта статистики
+            // ========== НОВЫЕ МЕТОДЫ ЭКСПОРТА ==========
+
+            showExportModal() {
+                app.showModal(`
+                    <h3>📊 Экспорт статистики сканирований</h3>
+                    <form id="export-form">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                            <div>
+                                <label>Дата начала:</label>
+                                <input name="date_from" type="date" value="${this.getDefaultDateFrom()}" required>
+                            </div>
+                            <div>
+                                <label>Дата окончания:</label>
+                                <input name="date_to" type="date" value="${new Date().toISOString().split('T')[0]}" required>
+                            </div>
+                        </div>
+
+                        <select name="event_id">
+                            <option value="">Все события</option>
+                        </select>
+
+                        <select name="status">
+                            <option value="">Все статусы</option>
+                            <option value="active">Только активные</option>
+                            <option value="blocked">Только заблокированные</option>
+                        </select>
+
+                        <select name="format">
+                            <option value="csv">CSV (Excel)</option>
+                            <option value="json">JSON (данные)</option>
+                        </select>
+
+                        <label style="display: flex; align-items: center; gap: 10px; margin: 15px 0;">
+                            <input name="include_no_scans" type="checkbox">
+                            Включить посетителей без сканирований
+                        </label>
+
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0; font-size: 14px;">
+                            <strong>📋 Что будет в экспорте:</strong>
+                            <ul style="margin: 10px 0; padding-left: 20px;">
+                                <li>ФИО посетителя</li>
+                                <li>Штрихкод</li>
+                                <li>Комментарий</li>
+                                <li>Событие и локация</li>
+                                <li>Время первого сканирования</li>
+                                <li>Общее количество сканирований</li>
+                                <li>Разбивка по типам сканирований</li>
+                                <li>Даты всех сканирований</li>
+                            </ul>
+                        </div>
+
+                        <button type="submit">📥 Скачать экспорт</button>
+                    </form>
+                `, async (formData) => {
+                    await this.performExport(formData);
+                });
+
+                // Загружаем события для фильтра
+                this.loadEventsForExport();
+            },
+
+            async loadEventsForExport() {
+                try {
+                    const response = await fetch('/api/events?active_only=true');
+                    if (response.ok) {
+                        const data = await response.json();
+                        const select = document.querySelector('#export-form select[name="event_id"]');
+                        if (select && data.events) {
+                            // Очищаем и добавляем опции
+                            select.innerHTML = '<option value="">Все события</option>';
+                            data.events.forEach(event => {
+                                const option = document.createElement('option');
+                                option.value = event.id;
+                                option.textContent = `${event.name} (${event.stats?.total_visitors || 0} посетителей)`;
+                                select.appendChild(option);
+                            });
+                        }
+                    }
+                } catch (err) {
+                    console.error('Ошибка загрузки событий для экспорта:', err);
+                }
+            },
+
+            async performExport(formData) {
+                try {
+                    const params = new URLSearchParams();
+
+                    // Добавляем все параметры из формы
+                    for (const [key, value] of formData.entries()) {
+                        if (value && value.trim() !== '') {
+                            if (key === 'include_no_scans') {
+                                params.append(key, 'true');
+                            } else {
+                                params.append(key, value);
+                            }
+                        }
+                    }
+
+                    // Показываем индикатор загрузки
+                    app.showAlert('info', 'Подготовка экспорта...');
+
+                    const format = formData.get('format') || 'csv';
+                    const response = await fetch(`/api/scan/export/statistics?${params}`);
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || 'Ошибка экспорта');
+                    }
+
+                    // Определяем имя файла из заголовков
+                    const contentDisposition = response.headers.get('Content-Disposition');
+                    let filename = `scan_statistics_${new Date().toISOString().split('T')[0]}.${format}`;
+
+                    if (contentDisposition) {
+                        const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+                        if (filenameMatch) {
+                            filename = filenameMatch[1];
+                        }
+                    }
+
+                    // Скачиваем файл
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+
+                    app.showAlert('success', `Экспорт статистики успешно скачан: ${filename}`);
+
+                } catch (err) {
+                    console.error('Ошибка экспорта:', err);
+                    app.showAlert('error', 'Ошибка экспорта: ' + err.message);
+                }
+            },
+
+            async exportScanStatistics() {
+                try {
+                    // Быстрый экспорт с параметрами по умолчанию
+                    app.showAlert('info', 'Подготовка экспорта всех сканирований...');
+
+                    const params = new URLSearchParams({
+                        format: 'csv',
+                        include_no_scans: 'false'
+                    });
+
+                    const response = await fetch(`/api/scan/export/statistics?${params}`);
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || 'Ошибка экспорта');
+                    }
+
+                    const blob = await response.blob();
+                    const filename = `scan_statistics_${new Date().toISOString().split('T')[0]}.csv`;
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+
+                    app.showAlert('success', 'Экспорт статистики скачан: ' + filename);
+
+                } catch (err) {
+                    console.error('Ошибка быстрого экспорта:', err);
+                    app.showAlert('error', 'Ошибка экспорта: ' + err.message);
+                }
+            },
+
+            getDefaultDateFrom() {
+                const date = new Date();
+                date.setDate(date.getDate() - 30); // 30 дней назад
+                return date.toISOString().split('T')[0];
+            },
+
+            async showExportInfo() {
+                try {
+                    const response = await fetch('/api/scan/export/info');
+                    if (response.ok) {
+                        const data = await response.json();
+
+                        app.showModal(`
+                            <h3>📊 Информация об экспорте</h3>
+                            <div style="text-align: left;">
+                                <h4>📈 Доступные данные:</h4>
+                                <p><strong>Всего посетителей:</strong> ${data.export_info.total_visitors}</p>
+                                <p><strong>Всего сканирований:</strong> ${data.export_info.total_scans}</p>
+                                <p><strong>Активных дней:</strong> ${data.export_info.active_days}</p>
+                                <p><strong>Событий:</strong> ${data.export_info.events_count}</p>
+
+                                ${data.export_info.date_range.first_scan_date ? `
+                                    <p><strong>Период данных:</strong>
+                                    ${new Date(data.export_info.date_range.first_scan_date).toLocaleDateString('ru-RU')} -
+                                    ${new Date(data.export_info.date_range.last_scan_date).toLocaleDateString('ru-RU')}</p>
+                                ` : '<p><strong>Сканирований пока нет</strong></p>'}
+
+                                <h4>🎯 Топ событий:</h4>
+                                <ul>
+                                    ${data.available_events.slice(0, 5).map(event =>
+                            `<li>${event.name} (${event.visitors_count} посетителей)</li>`
+                        ).join('')}
+                                </ul>
+
+                                <div style="margin-top: 20px;">
+                                    <button onclick="app.stats.showExportModal()" style="margin-right: 10px;">
+                                        📊 Настроить экспорт
+                                    </button>
+                                    <button onclick="app.stats.exportScanStatistics()">
+                                        📋 Быстрый экспорт
+                                    </button>
+                                </div>
+                            </div>
+                        `);
+                    }
+                } catch (err) {
+                    console.error('Ошибка получения информации об экспорте:', err);
+                    app.showAlert('error', 'Ошибка получения информации об экспорте');
+                }
+            },
+
+            // Метод для экспорта статистики (оригинальный)
             async exportStats() {
                 try {
                     const data = await this.loadOverviewStats();
