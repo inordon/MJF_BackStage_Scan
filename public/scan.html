@@ -82,6 +82,19 @@
             font-style: italic;
         }
 
+        .barcode-display {
+            font-size: 1.8em;
+            font-weight: 600;
+            color: #007bff;
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 12px;
+            border: 2px solid #dee2e6;
+            margin-bottom: 20px;
+            font-family: 'Courier New', monospace;
+            letter-spacing: 2px;
+        }
+
         .scan-time {
             font-size: 1.2em;
             color: #fd7e14;
@@ -220,6 +233,11 @@
             .scan-details {
                 grid-template-columns: 1fr;
             }
+
+            .barcode-display {
+                font-size: 1.4em;
+                letter-spacing: 1px;
+            }
         }
 
         .timestamp {
@@ -250,7 +268,7 @@
     <div id="scan-content">
         <div class="loading pulse"></div>
         <div style="font-size: 1.5em; color: #666; margin-bottom: 20px;">
-            Обработка QR-кода...
+            Обработка штрихкода...
         </div>
     </div>
 
@@ -261,9 +279,9 @@
     let countdownTimer;
     let refreshTimer;
 
-    // Получаем UUID из URL
+    // Получаем штрихкод из URL
     const pathParts = window.location.pathname.split('/');
-    const uuid = pathParts[pathParts.length - 1];
+    const barcode = pathParts[pathParts.length - 1];
 
     document.addEventListener('DOMContentLoaded', async () => {
         updateTimestamp();
@@ -274,11 +292,13 @@
     // Обработка сканирования
     async function processScan() {
         try {
-            if (!uuid || !isValidUUID(uuid)) {
-                throw new Error('Некорректный QR код');
+            if (!barcode || barcode.trim() === '') {
+                throw new Error('Некорректный штрихкод');
             }
 
-            const response = await fetch(`/api/scan/${uuid}`);
+            console.log('Сканирование штрихкода:', barcode);
+
+            const response = await fetch(`/api/scan/${barcode}`);
             const data = await response.json();
 
             if (!response.ok) {
@@ -303,10 +323,12 @@
                     <div class="scan-icon success-icon">✅</div>
                     <div class="visitor-name">${data.title}</div>
                     ${data.comment ? `<div class="visitor-comment">"${data.comment}"</div>` : ''}
+                    <div class="barcode-display">📊 ${data.barcode || barcode}</div>
                     <div class="status-info">
                         <h4>✅ Проход разрешен</h4>
                         <p><strong>Время сканирования:</strong> ${new Date(data.scanTime).toLocaleString('ru-RU')}</p>
                         <p><strong>Статус:</strong> Первое сканирование за день</p>
+                        <p><strong>Штрихкод:</strong> ${data.barcode || barcode}</p>
                     </div>
                 `;
                 break;
@@ -317,6 +339,7 @@
                     <div class="scan-icon warning-icon">⚠️</div>
                     <div class="visitor-name">${data.title}</div>
                     ${data.comment ? `<div class="visitor-comment">"${data.comment}"</div>` : ''}
+                    <div class="barcode-display">📊 ${data.barcode || barcode}</div>
                     <div class="scan-time">
                         Время первого сканирования: ${new Date(data.firstScanTime).toLocaleString('ru-RU')}
                     </div>
@@ -324,6 +347,7 @@
                         <h4>⚠️ Повторное сканирование</h4>
                         <p><strong>Текущее время:</strong> ${new Date(data.currentScanTime).toLocaleString('ru-RU')}</p>
                         <p><strong>Статус:</strong> Посетитель уже проходил сегодня</p>
+                        <p><strong>Штрихкод:</strong> ${data.barcode || barcode}</p>
                     </div>
                 `;
                 break;
@@ -334,6 +358,7 @@
                     <div class="scan-icon warning-icon">⚠️</div>
                     <div class="visitor-name">${data.title}</div>
                     ${data.comment ? `<div class="visitor-comment">"${data.comment}"</div>` : ''}
+                    <div class="barcode-display">📊 ${data.barcode || barcode}</div>
                     <div class="scan-time">
                         Время последнего сканирования: ${new Date(data.lastScanTime).toLocaleString('ru-RU')}
                     </div>
@@ -341,20 +366,23 @@
                         <h4>⚠️ Повторное сканирование</h4>
                         <p><strong>Текущее время:</strong> ${new Date(data.currentScanTime).toLocaleString('ru-RU')}</p>
                         <p><strong>Статус:</strong> Посетитель уже проходил сегодня (${data.scanCount} раз)</p>
+                        <p><strong>Штрихкод:</strong> ${data.barcode || barcode}</p>
                     </div>
                 `;
                 break;
 
             case 'error':
                 if (data.type === 'not_found') {
-                    // QR код не найден - два XX
+                    // Штрихкод не найден - два XX
                     container.innerHTML = `
                         <div class="scan-icon error-icon">❌❌</div>
-                        <div class="error-message">QR КОД НЕ НАЙДЕН</div>
+                        <div class="error-message">ШТРИХКОД НЕ НАЙДЕН</div>
+                        <div class="barcode-display" style="color: #dc3545; border-color: #dc3545;">📊 ${data.barcode || barcode}</div>
                         <div class="status-info">
-                            <h4>❌❌ QR код не найден в базе</h4>
-                            <p><strong>Причина:</strong> QR код не найден в базе данных</p>
+                            <h4>❌❌ Штрихкод не найден в базе</h4>
+                            <p><strong>Причина:</strong> Штрихкод не найден в базе данных</p>
                             <p><strong>Действие:</strong> Обратитесь к администратору</p>
+                            <p><strong>Сканированный код:</strong> ${data.barcode || barcode}</p>
                         </div>
                     `;
                 } else if (data.type === 'blocked') {
@@ -362,10 +390,12 @@
                     container.innerHTML = `
                         <div class="scan-icon error-icon">❌</div>
                         <div class="error-message">ПРОХОД ЗАПРЕЩЕН</div>
+                        <div class="barcode-display" style="color: #dc3545; border-color: #dc3545;">📊 ${data.barcode || barcode}</div>
                         <div class="status-info">
                             <h4>❌ Посетитель заблокирован</h4>
                             <p><strong>Причина:</strong> Посетитель заблокирован</p>
                             <p><strong>Действие:</strong> Обратитесь к администратору</p>
+                            <p><strong>Штрихкод:</strong> ${data.barcode || barcode}</p>
                         </div>
                     `;
                 } else {
@@ -385,19 +415,15 @@
         container.innerHTML = `
             <div class="scan-icon info-icon">ℹ️</div>
             <div class="info-message">${title}</div>
+            <div class="barcode-display" style="color: #6c757d; border-color: #6c757d;">📊 ${barcode}</div>
             <div class="status-info">
                 <h4>ℹ️ Техническая информация</h4>
                 <p><strong>Описание:</strong> ${message}</p>
                 <p><strong>Время:</strong> ${new Date().toLocaleString('ru-RU')}</p>
+                <p><strong>Штрихкод:</strong> ${barcode}</p>
                 <p><strong>Рекомендация:</strong> Обратитесь к организатору мероприятия</p>
             </div>
         `;
-    }
-
-    // Проверка валидности UUID
-    function isValidUUID(uuid) {
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-        return uuidRegex.test(uuid);
     }
 
     // Обновление временной метки

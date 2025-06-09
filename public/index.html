@@ -34,7 +34,7 @@
     <!-- Посетители -->
     <div id="visitors" class="content active">
         <div class="filters-section">
-            <input type="text" id="search-input" placeholder="Поиск по ФИО, событию...">
+            <input type="text" id="search-input" placeholder="Поиск по ФИО, событию, штрихкоду...">
             <select id="status-filter">
                 <option value="">Все статусы</option>
                 <option value="active">Активные</option>
@@ -67,6 +67,7 @@
             <input name="lastName" placeholder="Фамилия" required>
             <input name="firstName" placeholder="Имя" required>
             <input name="middleName" placeholder="Отчество">
+            <input name="barcode" placeholder="Штрихкод (необязательно - будет сгенерирован автоматически)">
             <textarea name="comment" placeholder="Комментарий"></textarea>
             <input type="file" name="photo" accept="image/*">
             <button type="submit">Создать посетителя</button>
@@ -233,6 +234,7 @@
                     <thead>
                         <tr>
                             <th>ФИО</th>
+                            <th>Штрихкод</th>
                             <th>Событие</th>
                             <th>Статус</th>
                             <th>Сканирований</th>
@@ -246,13 +248,14 @@
                                     <strong>${v.last_name} ${v.first_name} ${v.middle_name || ''}</strong>
                                     ${v.comment ? `<br><small>${v.comment}</small>` : ''}
                                 </td>
+                                <td><code style="background: #f8f9fa; padding: 2px 6px; border-radius: 4px; font-size: 12px;">${v.barcode || 'Нет'}</code></td>
                                 <td><span class="badge">${v.event?.name || 'Без события'}</span></td>
                                 <td><span class="status-${v.status}">${v.status === 'active' ? 'Активен' : 'Заблокирован'}</span></td>
                                 <td>${v.total_scans} ${v.first_scan_today ? '(сегодня)' : ''}</td>
                                 <td>
-                                    <button onclick="app.visitors.downloadQR(${v.id})">📥</button>
-                                    <button onclick="app.visitors.toggleStatus(${v.id}, '${v.status}')">${v.status === 'active' ? '🔒' : '🔓'}</button>
-                                    ${app.state.currentUser.role === 'admin' ? `<button onclick="app.visitors.delete(${v.id})">🗑️</button>` : ''}
+                                    <button onclick="app.visitors.downloadQR(${v.id})" title="Скачать QR">📥</button>
+                                    <button onclick="app.visitors.toggleStatus(${v.id}, '${v.status}')" title="${v.status === 'active' ? 'Заблокировать' : 'Разблокировать'}">${v.status === 'active' ? '🔒' : '🔓'}</button>
+                                    ${app.state.currentUser.role === 'admin' ? `<button onclick="app.visitors.delete(${v.id})" title="Удалить">🗑️</button>` : ''}
                                 </td>
                             </tr>
                         `).join('')}
@@ -283,13 +286,14 @@
             },
 
             showQRResult(visitor) {
-                const qrUrl = `${window.location.origin}/scan/${visitor.visitor_uuid}`;
+                const qrData = visitor.barcode; // Теперь QR содержит штрихкод
                 const container = document.getElementById('qr-result');
 
                 container.innerHTML = `
                 <div class="qr-container">
                     <canvas id="qr-canvas"></canvas>
                     <p>QR-код для ${visitor.last_name} ${visitor.first_name}</p>
+                    <p><strong>Штрихкод:</strong> <code>${visitor.barcode}</code></p>
                     <button onclick="app.visitors.downloadQRCanvas()">📥 Скачать</button>
                     <button onclick="app.visitors.resetForm()">➕ Добавить еще</button>
                 </div>
@@ -298,7 +302,7 @@
 
                 // Генерируем QR код
                 if (typeof QRCode !== 'undefined') {
-                    QRCode.toCanvas(document.getElementById('qr-canvas'), qrUrl);
+                    QRCode.toCanvas(document.getElementById('qr-canvas'), qrData);
                 }
             },
 

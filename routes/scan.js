@@ -1,34 +1,39 @@
 const express = require('express');
 const { query } = require('../config/database');
-const { requireScanAuth, validateVisitorUUID } = require('../middleware/auth');
+const { requireScanAuth } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Сканирование QR кода посетителя
-router.get('/:uuid', validateVisitorUUID, requireScanAuth, async (req, res) => {
+// Сканирование штрихкода посетителя
+router.get('/:barcode', requireScanAuth, async (req, res) => {
     try {
-        const { uuid } = req.params;
+        const { barcode } = req.params;
         const userId = req.user.id;
 
-        // Получаем данные посетителя по UUID
+        console.log('Сканирование штрихкода:', barcode);
+
+        // Получаем данные посетителя по штрихкоду
         const visitorResult = await query(
-            'SELECT id, last_name, first_name, middle_name, comment, status FROM visitors WHERE visitor_uuid = $1',
-            [uuid]
+            'SELECT id, last_name, first_name, middle_name, comment, status FROM visitors WHERE barcode = $1',
+            [barcode]
         );
 
         // Если посетитель не найден
         if (!visitorResult.rows.length) {
+            console.log('Посетитель с штрихкодом не найден:', barcode);
             return res.json({
                 status: 'error',
                 type: 'not_found',
                 icon: '❌',
                 title: 'ПРОХОД ЗАПРЕЩЕН',
-                message: 'QR код не найден в базе данных',
+                message: 'Штрихкод не найден в базе данных',
+                barcode: barcode,
                 timestamp: new Date().toISOString()
             });
         }
 
         const visitor = visitorResult.rows[0];
+        console.log('Найден посетитель:', visitor);
 
         // Если посетитель заблокирован
         if (visitor.status === 'blocked') {
@@ -53,6 +58,7 @@ router.get('/:uuid', validateVisitorUUID, requireScanAuth, async (req, res) => {
                     name: `${visitor.last_name} ${visitor.first_name} ${visitor.middle_name || ''}`.trim(),
                     comment: visitor.comment
                 },
+                barcode: barcode,
                 timestamp: new Date().toISOString()
             });
         }
@@ -62,8 +68,8 @@ router.get('/:uuid', validateVisitorUUID, requireScanAuth, async (req, res) => {
         // Проверяем сканирования за сегодня
         const todayScansResult = await query(`
             SELECT scanned_at, scan_type
-            FROM scans 
-            WHERE visitor_id = $1 AND scan_date = CURRENT_DATE 
+            FROM scans
+            WHERE visitor_id = $1 AND scan_date = CURRENT_DATE
             ORDER BY scanned_at ASC
         `, [visitor.id]);
 
@@ -88,7 +94,7 @@ router.get('/:uuid', validateVisitorUUID, requireScanAuth, async (req, res) => {
         const newScanResult = await query(`
             INSERT INTO scans (visitor_id, scan_type, scanned_by, ip_address, user_agent)
             VALUES ($1, $2, $3, $4, $5)
-            RETURNING scanned_at
+                RETURNING scanned_at
         `, [
             visitor.id,
             scanType,
@@ -108,6 +114,7 @@ router.get('/:uuid', validateVisitorUUID, requireScanAuth, async (req, res) => {
                 title: fullName,
                 comment: visitor.comment,
                 scanTime: scanTime,
+                barcode: barcode,
                 message: 'Добро пожаловать! Первое сканирование за день',
                 timestamp: new Date().toISOString()
             });
@@ -122,6 +129,7 @@ router.get('/:uuid', validateVisitorUUID, requireScanAuth, async (req, res) => {
                 comment: visitor.comment,
                 firstScanTime: firstScanTime,
                 currentScanTime: scanTime,
+                barcode: barcode,
                 message: 'Повторное сканирование',
                 scanCount: todayScansResult.rows.length + 1,
                 timestamp: new Date().toISOString()
@@ -137,6 +145,7 @@ router.get('/:uuid', validateVisitorUUID, requireScanAuth, async (req, res) => {
                 comment: visitor.comment,
                 lastScanTime: lastScanTime,
                 currentScanTime: scanTime,
+                barcode: barcode,
                 message: 'Дублирующее сканирование (менее 30 минут назад)',
                 scanCount: todayScansResult.rows.length + 1,
                 timestamp: new Date().toISOString()
@@ -144,7 +153,7 @@ router.get('/:uuid', validateVisitorUUID, requireScanAuth, async (req, res) => {
         }
 
     } catch (err) {
-        console.error('Ошибка сканирования QR кода:', err);
+        console.error('Ошибка сканирования штрихкода:', err);
 
         res.json({
             status: 'error',
@@ -152,6 +161,7 @@ router.get('/:uuid', validateVisitorUUID, requireScanAuth, async (req, res) => {
             icon: 'ℹ️',
             title: 'Обратитесь к организатору',
             message: 'Произошла техническая ошибка при сканировании',
+            barcode: req.params.barcode,
             error: process.env.NODE_ENV === 'development' ? err.message : undefined,
             timestamp: new Date().toISOString()
         });
@@ -161,29 +171,29 @@ router.get('/:uuid', validateVisitorUUID, requireScanAuth, async (req, res) => {
 // Массовое сканирование (для тестирования)
 router.post('/batch', requireScanAuth, async (req, res) => {
     try {
-        const { uuids } = req.body;
+        const { barcodes } = req.body;
 
-        if (!Array.isArray(uuids) || uuids.length === 0) {
-            return res.status(400).json({ error: 'Требуется массив UUID посетителей' });
+        if (!Array.isArray(barcodes) || barcodes.length === 0) {
+            return res.status(400).json({ error: 'Требуется массив штрихкодов посетителей' });
         }
 
-        if (uuids.length > 10) {
-            return res.status(400).json({ error: 'Максимум 10 UUID за раз' });
+        if (barcodes.length > 10) {
+            return res.status(400).json({ error: 'Максимум 10 штрихкодов за раз' });
         }
 
         const results = [];
 
-        for (const uuid of uuids) {
+        for (const barcode of barcodes) {
             try {
                 // Используем тот же алгоритм, что и для одиночного сканирования
                 const visitorResult = await query(
-                    'SELECT id, last_name, first_name, middle_name, comment, status FROM visitors WHERE visitor_uuid = $1',
-                    [uuid]
+                    'SELECT id, last_name, first_name, middle_name, comment, status FROM visitors WHERE barcode = $1',
+                    [barcode]
                 );
 
                 if (!visitorResult.rows.length) {
                     results.push({
-                        uuid,
+                        barcode,
                         status: 'error',
                         message: 'Посетитель не найден'
                     });
@@ -194,7 +204,7 @@ router.post('/batch', requireScanAuth, async (req, res) => {
 
                 if (visitor.status === 'blocked') {
                     results.push({
-                        uuid,
+                        barcode,
                         status: 'blocked',
                         message: 'Посетитель заблокирован',
                         name: `${visitor.last_name} ${visitor.first_name} ${visitor.middle_name || ''}`.trim()
@@ -206,7 +216,7 @@ router.post('/batch', requireScanAuth, async (req, res) => {
                 const scanResult = await query(`
                     INSERT INTO scans (visitor_id, scan_type, scanned_by, ip_address, user_agent)
                     VALUES ($1, 'batch', $2, $3, $4)
-                    RETURNING scanned_at
+                        RETURNING scanned_at
                 `, [
                     visitor.id,
                     req.user.id,
@@ -215,7 +225,7 @@ router.post('/batch', requireScanAuth, async (req, res) => {
                 ]);
 
                 results.push({
-                    uuid,
+                    barcode,
                     status: 'success',
                     message: 'Сканирование успешно',
                     name: `${visitor.last_name} ${visitor.first_name} ${visitor.middle_name || ''}`.trim(),
@@ -223,9 +233,9 @@ router.post('/batch', requireScanAuth, async (req, res) => {
                 });
 
             } catch (err) {
-                console.error(`Ошибка сканирования UUID ${uuid}:`, err);
+                console.error(`Ошибка сканирования штрихкода ${barcode}:`, err);
                 results.push({
-                    uuid,
+                    barcode,
                     status: 'error',
                     message: 'Ошибка при сканировании'
                 });
@@ -257,7 +267,7 @@ router.get('/stats/daily', requireScanAuth, async (req, res) => {
         const targetDate = date ? new Date(date) : new Date();
 
         const stats = await query(`
-            SELECT 
+            SELECT
                 COUNT(*) as total_scans,
                 COUNT(DISTINCT visitor_id) as unique_visitors,
                 COUNT(CASE WHEN scan_type = 'first' THEN 1 END) as first_scans,
@@ -266,16 +276,16 @@ router.get('/stats/daily', requireScanAuth, async (req, res) => {
                 COUNT(CASE WHEN scan_type = 'blocked_attempt' THEN 1 END) as blocked_attempts,
                 MIN(scanned_at) as first_scan_time,
                 MAX(scanned_at) as last_scan_time
-            FROM scans 
+            FROM scans
             WHERE scan_date = $1::date
         `, [targetDate]);
 
         const hourlyStats = await query(`
-            SELECT 
+            SELECT
                 EXTRACT(HOUR FROM scanned_at) as hour,
                 COUNT(*) as scan_count,
                 COUNT(DISTINCT visitor_id) as unique_visitors
-            FROM scans 
+            FROM scans
             WHERE scan_date = $1::date
             GROUP BY EXTRACT(HOUR FROM scanned_at)
             ORDER BY hour
@@ -303,6 +313,7 @@ router.get('/search/scans', requireScanAuth, async (req, res) => {
     try {
         const {
             visitor_name,
+            barcode,
             scan_type,
             date_from,
             date_to,
@@ -315,36 +326,41 @@ router.get('/search/scans', requireScanAuth, async (req, res) => {
         const params = [];
 
         let query_text = `
-            SELECT 
+            SELECT
                 s.id, s.scan_type, s.scanned_at, s.ip_address,
-                v.visitor_uuid, v.last_name, v.first_name, v.middle_name, v.status,
+                v.barcode, v.last_name, v.first_name, v.middle_name, v.status,
                 u.username as scanned_by_username
             FROM scans s
-            JOIN visitors v ON s.visitor_id = v.id
-            LEFT JOIN users u ON s.scanned_by = u.id
+                     JOIN visitors v ON s.visitor_id = v.id
+                     LEFT JOIN users u ON s.scanned_by = u.id
         `;
 
         if (visitor_name) {
             conditions.push(`(
-                v.last_name ILIKE ${params.length + 1} OR 
-                v.first_name ILIKE ${params.length + 1} OR 
-                v.middle_name ILIKE ${params.length + 1}
+                v.last_name ILIKE $${params.length + 1} OR 
+                v.first_name ILIKE $${params.length + 1} OR 
+                v.middle_name ILIKE $${params.length + 1}
             )`);
             params.push(`%${visitor_name}%`);
         }
 
+        if (barcode) {
+            conditions.push(`v.barcode ILIKE $${params.length + 1}`);
+            params.push(`%${barcode}%`);
+        }
+
         if (scan_type && ['first', 'repeat', 'duplicate', 'blocked_attempt', 'batch'].includes(scan_type)) {
-            conditions.push(`s.scan_type = ${params.length + 1}`);
+            conditions.push(`s.scan_type = $${params.length + 1}`);
             params.push(scan_type);
         }
 
         if (date_from) {
-            conditions.push(`s.scan_date >= ${params.length + 1}`);
+            conditions.push(`s.scan_date >= $${params.length + 1}`);
             params.push(date_from);
         }
 
         if (date_to) {
-            conditions.push(`s.scan_date <= ${params.length + 1}`);
+            conditions.push(`s.scan_date <= $${params.length + 1}`);
             params.push(date_to);
         }
 
@@ -354,7 +370,7 @@ router.get('/search/scans', requireScanAuth, async (req, res) => {
 
         query_text += `
             ORDER BY s.scanned_at DESC
-            LIMIT ${params.length + 1} OFFSET ${params.length + 2}
+            LIMIT $${params.length + 1} OFFSET $${params.length + 2}
         `;
 
         params.push(limit, offset);
@@ -365,7 +381,7 @@ router.get('/search/scans', requireScanAuth, async (req, res) => {
         let count_query = `
             SELECT COUNT(*) as total
             FROM scans s
-            JOIN visitors v ON s.visitor_id = v.id
+                     JOIN visitors v ON s.visitor_id = v.id
         `;
 
         if (conditions.length > 0) {
@@ -382,7 +398,7 @@ router.get('/search/scans', requireScanAuth, async (req, res) => {
                 scannedAt: scan.scanned_at,
                 ipAddress: scan.ip_address,
                 visitor: {
-                    uuid: scan.visitor_uuid,
+                    barcode: scan.barcode,
                     name: `${scan.last_name} ${scan.first_name} ${scan.middle_name || ''}`.trim(),
                     status: scan.status
                 },

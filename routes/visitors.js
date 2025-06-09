@@ -1,4 +1,4 @@
-// routes/visitors.js - исправленная версия с поддержкой событий
+// routes/visitors.js - обновленная версия с поддержкой штрихкодов
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
@@ -47,7 +47,15 @@ const upload = multer({
     }
 });
 
-// Валидация данных посетителя с событием
+// Функция генерации штрихкода
+function generateBarcode() {
+    const date = new Date();
+    const dateStr = date.toISOString().slice(0, 10).replace(/-/g, ''); // YYYYMMDD
+    const randomNum = Math.floor(Math.random() * 9000) + 1000; // 4-значное число
+    return `VIS${dateStr}${randomNum}`;
+}
+
+// Валидация данных посетителя с штрихкодом
 const visitorValidation = [
     body('lastName')
         .trim()
@@ -75,15 +83,22 @@ const visitorValidation = [
         .withMessage('Комментарий не должен превышать 500 символов'),
     body('eventId')
         .isInt({ min: 1 })
-        .withMessage('Необходимо выбрать событие')
+        .withMessage('Необходимо выбрать событие'),
+    body('barcode')
+        .optional()
+        .trim()
+        .isLength({ min: 3, max: 100 })
+        .withMessage('Штрихкод должен содержать от 3 до 100 символов')
+        .matches(/^[A-Z0-9-_]+$/)
+        .withMessage('Штрихкод может содержать только заглавные буквы, цифры, дефисы и подчеркивания')
 ];
 
-// Получить всех посетителей с информацией о событиях
+// Получить всех посетителей с информацией о событиях и штрихкодах
 router.get('/', requireAuth, async (req, res) => {
     try {
         // Исправляем параметры с безопасными значениями по умолчанию
         const page = Math.max(1, parseInt(req.query.page) || 1);
-        const limit = Math.max(1, Math.min(100, parseInt(req.query.limit) || 25)); // Ограничиваем максимум 100
+        const limit = Math.max(1, Math.min(100, parseInt(req.query.limit) || 25));
         const offset = (page - 1) * limit;
 
         // Безопасно обрабатываем остальные параметры
@@ -95,7 +110,7 @@ router.get('/', requireAuth, async (req, res) => {
 
         let queryText = `
             SELECT v.id, v.visitor_uuid, v.last_name, v.first_name, v.middle_name,
-                   v.comment, v.status, v.created_at, v.updated_at,
+                   v.comment, v.status, v.created_at, v.updated_at, v.barcode,
                    v.photo_path, v.qr_code_path, v.event_id,
                    creator.full_name as created_by_name,
                    e.name as event_name, e.start_date as event_start_date, e.end_date as event_end_date,
@@ -127,6 +142,7 @@ router.get('/', requireAuth, async (req, res) => {
                 v.first_name ILIKE $${queryParams.length + 1} OR 
                 v.middle_name ILIKE $${queryParams.length + 1} OR
                 v.comment ILIKE $${queryParams.length + 1} OR
+                v.barcode ILIKE $${queryParams.length + 1} OR
                 e.name ILIKE $${queryParams.length + 1}
             )`);
             queryParams.push(`%${search}%`);
@@ -172,6 +188,7 @@ router.get('/', requireAuth, async (req, res) => {
                 middle_name: visitor.middle_name,
                 comment: visitor.comment,
                 status: visitor.status,
+                barcode: visitor.barcode,
                 created_at: visitor.created_at,
                 updated_at: visitor.updated_at,
                 photo_path: visitor.photo_path,
@@ -206,7 +223,7 @@ router.get('/', requireAuth, async (req, res) => {
     }
 });
 
-// Создать нового посетителя с привязкой к событию
+// Создать нового посетителя с штрихкодом
 router.post('/', requireAuth, upload.single('photo'), visitorValidation, async (req, res) => {
     try {
         console.log('Создание посетителя, тело запроса:', req.body);
@@ -223,11 +240,20 @@ router.post('/', requireAuth, upload.single('photo'), visitorValidation, async (
         }
 
         const { lastName, firstName, middleName, comment, eventId } = req.body;
+        let { barcode } = req.body;
+
         const photo_path = req.file ? req.file.path : null;
         const visitor_uuid = uuidv4();
 
+        // Если штрихкод не указан, генерируем автоматически
+        if (!barcode || barcode.trim() === '') {
+            barcode = generateBarcode();
+        } else {
+            barcode = barcode.trim().toUpperCase();
+        }
+
         console.log('Данные для создания посетителя:', {
-            lastName, firstName, middleName, comment, eventId, photo_path, visitor_uuid
+            lastName, firstName, middleName, comment, eventId, barcode, photo_path, visitor_uuid
         });
 
         // Проверяем существование события
@@ -240,31 +266,36 @@ router.post('/', requireAuth, upload.single('photo'), visitorValidation, async (
             return res.status(400).json({ error: 'Нельзя добавлять посетителей в неактивное событие' });
         }
 
+        // Проверяем уникальность штрихкода
+        const barcodeCheck = await query('SELECT id FROM visitors WHERE barcode = $1', [barcode]);
+        if (barcodeCheck.rows.length > 0) {
+            return res.status(400).json({ error: 'Посетитель с таким штрихкодом уже существует' });
+        }
+
         const result = await transaction(async (client) => {
             // Создаем посетителя
             console.log('Создание записи посетителя в БД...');
             const visitorResult = await client.query(`
                 INSERT INTO visitors (
                     visitor_uuid, last_name, first_name, middle_name,
-                    comment, photo_path, status, event_id, created_by
-                ) VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, $8)
+                    comment, photo_path, status, event_id, barcode, created_by
+                ) VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, $8, $9)
                     RETURNING id
             `, [
                 visitor_uuid, lastName, firstName,
-                middleName, comment, photo_path, eventId, req.user.id
+                middleName, comment, photo_path, eventId, barcode, req.user.id
             ]);
 
             const visitorId = visitorResult.rows[0].id;
             console.log('Посетитель создан с ID:', visitorId);
 
-            // Генерируем QR код
-            console.log('Генерация QR кода...');
-            const qrData = `${req.protocol}://${req.get('host')}/scan/${visitor_uuid}`;
-            console.log('QR данные:', qrData);
+            // Генерируем QR код из штрихкода
+            console.log('Генерация QR кода из штрихкода:', barcode);
+            const qrData = barcode; // QR код содержит штрихкод
 
             const qrCodeDir = process.env.UPLOAD_PATH ? path.join(process.env.UPLOAD_PATH, 'qr-codes') : 'uploads/qr-codes';
             ensureDirectoryExists(qrCodeDir);
-            const qrCodePath = path.join(qrCodeDir, `visitor-${visitor_uuid}-qr.png`);
+            const qrCodePath = path.join(qrCodeDir, `visitor-${barcode}-qr.png`);
 
             try {
                 await QRCode.toFile(qrCodePath, qrData, {
@@ -314,6 +345,7 @@ router.post('/', requireAuth, upload.single('photo'), visitorValidation, async (
                 middle_name: createdVisitor.rows[0].middle_name,
                 comment: createdVisitor.rows[0].comment,
                 status: createdVisitor.rows[0].status,
+                barcode: createdVisitor.rows[0].barcode,
                 photo_path: createdVisitor.rows[0].photo_path,
                 qr_code_path: createdVisitor.rows[0].qr_code_path,
                 event_id: createdVisitor.rows[0].event_id,
@@ -329,6 +361,8 @@ router.post('/', requireAuth, upload.single('photo'), visitorValidation, async (
         let errorMessage = 'Ошибка сервера при создании посетителя';
         if (err.message.includes('QR код')) {
             errorMessage = err.message;
+        } else if (err.constraint && err.constraint.includes('barcode')) {
+            errorMessage = 'Посетитель с таким штрихкодом уже существует';
         } else if (err.constraint) {
             errorMessage = 'Ошибка ограничений базы данных';
         }
@@ -339,6 +373,61 @@ router.post('/', requireAuth, upload.single('photo'), visitorValidation, async (
         });
     }
 });
+
+// Получить посетителя по штрихкоду
+router.get('/barcode/:barcode', requireAuth, async (req, res) => {
+    try {
+        const { barcode } = req.params;
+
+        const result = await query(`
+            SELECT v.*,
+                   creator.full_name as created_by_name,
+                   updater.full_name as updated_by_name,
+                   e.name as event_name, e.start_date as event_start_date, e.end_date as event_end_date
+            FROM visitors v
+                     LEFT JOIN users creator ON v.created_by = creator.id
+                     LEFT JOIN users updater ON v.updated_by = updater.id
+                     LEFT JOIN events e ON v.event_id = e.id
+            WHERE v.barcode = $1
+        `, [barcode]);
+
+        if (!result.rows.length) {
+            return res.status(404).json({ error: 'Посетитель с таким штрихкодом не найден' });
+        }
+
+        const visitor = result.rows[0];
+
+        res.json({
+            id: visitor.id,
+            visitor_uuid: visitor.visitor_uuid,
+            last_name: visitor.last_name,
+            first_name: visitor.first_name,
+            middle_name: visitor.middle_name,
+            comment: visitor.comment,
+            status: visitor.status,
+            barcode: visitor.barcode,
+            created_at: visitor.created_at,
+            updated_at: visitor.updated_at,
+            photo_path: visitor.photo_path,
+            qr_code_path: visitor.qr_code_path,
+            event: visitor.event_id ? {
+                id: visitor.event_id,
+                name: visitor.event_name,
+                start_date: visitor.event_start_date,
+                end_date: visitor.event_end_date
+            } : null,
+            created_by_name: visitor.created_by_name,
+            updated_by_name: visitor.updated_by_name
+        });
+
+    } catch (err) {
+        console.error('Ошибка получения посетителя по штрихкоду:', err);
+        res.status(500).json({ error: 'Ошибка сервера' });
+    }
+});
+
+// Остальные роуты без изменений...
+// (продолжение с оставшимися роутами)
 
 // Получить список активных событий для выбора
 router.get('/events/active', requireAuth, async (req, res) => {
@@ -469,6 +558,7 @@ router.get('/:id', requireAuth, async (req, res) => {
             middle_name: visitor.middle_name,
             comment: visitor.comment,
             status: visitor.status,
+            barcode: visitor.barcode,
             created_at: visitor.created_at,
             updated_at: visitor.updated_at,
             photo_path: visitor.photo_path,
@@ -489,13 +579,13 @@ router.get('/:id', requireAuth, async (req, res) => {
     }
 });
 
-// Получить QR код посетителя
+// Получить QR код посетителя (теперь генерируется из штрихкода)
 router.get('/:id/qr', requireAuth, async (req, res) => {
     try {
         const { id } = req.params;
 
         const result = await query(
-            'SELECT qr_code_path, visitor_uuid, last_name, first_name, middle_name FROM visitors WHERE id = $1',
+            'SELECT qr_code_path, barcode, last_name, first_name, middle_name FROM visitors WHERE id = $1',
             [id]
         );
 
@@ -508,8 +598,8 @@ router.get('/:id/qr', requireAuth, async (req, res) => {
         if (visitor.qr_code_path && fs.existsSync(visitor.qr_code_path)) {
             res.sendFile(path.resolve(visitor.qr_code_path));
         } else {
-            // Генерируем QR код на лету, если файл не найден
-            const qrData = `${req.protocol}://${req.get('host')}/scan/${visitor.visitor_uuid}`;
+            // Генерируем QR код на лету из штрихкода
+            const qrData = visitor.barcode;
 
             res.setHeader('Content-Type', 'image/png');
             const qrStream = await QRCode.toBuffer(qrData, {
