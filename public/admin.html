@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Администрирование - Система управления посетителями</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👑</text></svg>">
+    <link rel="stylesheet" href="/css/app.min.css">
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>👑 Администрирование системы</h1>
+        <div class="user-info">
+            <div class="user-badge" id="user-badge">Загрузка...</div>
+            <a href="/" class="back-btn">← К списку</a>
+        </div>
+    </div>
+
+    <nav class="main-nav">
+        <a href="/" class="nav-link">📋 Посетители</a>
+        <a href="/visitors.html" class="nav-link">➕ Добавить</a>
+        <a href="/events.html" class="nav-link">🎯 События</a>
+        <a href="/scanner.html" class="nav-link">📱 Сканер</a>
+        <a href="/stats.html" class="nav-link">📊 Статистика</a>
+        <a href="/admin.html" class="nav-link active">👑 Админ</a>
+    </nav>
+
+    <!-- Управление пользователями -->
+    <div class="page-actions">
+        <button onclick="admin.showCreateUserForm()" class="primary-btn" id="create-user-btn">
+            👤 Создать пользователя
+        </button>
+        <button onclick="admin.refreshUsers()" class="secondary-btn">
+            🔄 Обновить
+        </button>
+        <button onclick="admin.showSystemInfo()" class="secondary-btn">
+            📊 Системная информация
+        </button>
+        <button onclick="admin.exportData()" class="secondary-btn">
+            📥 Экспорт данных
+        </button>
+    </div>
+
+    <!-- Фильтры для пользователей -->
+    <div class="filters-section">
+        <select id="role-filter">
+            <option value="">Все роли</option>
+            <option value="admin">👑 Администраторы</option>
+            <option value="moderator">⚙️ Модераторы</option>
+            <option value="skd">🔒 СКД</option>
+        </select>
+        <select id="active-filter">
+            <option value="">Все статусы</option>
+            <option value="true">✅ Активные</option>
+            <option value="false">🚫 Заблокированные</option>
+        </select>
+        <button onclick="admin.filterUsers()" class="secondary-btn">🔍 Найти</button>
+        <button onclick="admin.resetFilters()" class="secondary-btn">🔄 Сброс</button>
+    </div>
+
+    <!-- Системная статистика -->
+    <div class="stats-section">
+        <h3>📈 Системная статистика</h3>
+        <div class="stats-grid" id="system-stats">
+            <div class="stat-card">
+                <div class="stat-number" id="total-users">0</div>
+                <div class="stat-label">Всего пользователей</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="active-users">0</div>
+                <div class="stat-label">Активных</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="total-sessions">0</div>
+                <div class="stat-label">Активных сессий</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="system-uptime">0</div>
+                <div class="stat-label">Время работы (ч)</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Список пользователей -->
+    <div class="table-container">
+        <div class="table-header">
+            <span>Пользователи системы</span>
+            <span id="users-count">0</span>
+        </div>
+        <div id="users-table">
+            <div class="loading">Загрузка пользователей...</div>
+        </div>
+    </div>
+
+    <div id="users-pagination" class="pagination hidden"></div>
+
+    <!-- Мониторинг системы -->
+    <div class="stats-section">
+        <h3>🖥️ Мониторинг системы</h3>
+        <div class="system-monitoring" id="system-monitoring">
+            <div class="loading">Загрузка информации о системе...</div>
+        </div>
+    </div>
+
+    <!-- Активные сессии -->
+    <div class="stats-section">
+        <h3>🔐 Активные сессии</h3>
+        <div id="active-sessions">
+            <div class="loading">Загрузка активных сессий...</div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно создания пользователя -->
+<div id="create-user-modal" class="modal hidden">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>👤 Создание пользователя</h3>
+            <button onclick="admin.hideCreateUserForm()" class="close-btn">✕</button>
+        </div>
+
+        <form id="user-form">
+            <div class="form-group">
+                <label for="username">Логин *</label>
+                <input name="username" id="username" placeholder="user123" required pattern="[a-zA-Z0-9_]{3,50}">
+                <small class="form-hint">От 3 до 50 символов. Только буквы, цифры и знак подчеркивания</small>
+            </div>
+
+            <div class="form-group">
+                <label for="password">Пароль *</label>
+                <input name="password" id="password" type="password" placeholder="Минимум 6 символов" required minlength="6">
+                <small class="form-hint">Минимум 6 символов</small>
+            </div>
+
+            <div class="form-group">
+                <label for="fullName">Полное имя *</label>
+                <input name="fullName" id="fullName" placeholder="Иван Иванов" required>
+            </div>
+
+            <div class="form-group">
+                <label for="role">Роль *</label>
+                <select name="role" id="role" required>
+                    <option value="">Выберите роль</option>
+                    <option value="admin">👑 Администратор</option>
+                    <option value="moderator">⚙️ Модератор</option>
+                    <option value="skd">🔒 СКД</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input name="email" id="email" type="email" placeholder="user@example.com">
+                <small class="form-hint">Необязательно</small>
+            </div>
+
+            <div class="modal-actions">
+                <button type="submit" class="primary-btn">
+                    <span class="btn-text">✅ Создать пользователя</span>
+                    <span class="btn-loading hidden">🔄 Создание...</span>
+                </button>
+                <button type="button" onclick="admin.hideCreateUserForm()" class="secondary-btn">
+                    ❌ Отмена
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Модальное окно редактирования пользователя -->
+<div id="edit-user-modal" class="modal hidden">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>✏️ Редактирование пользователя</h3>
+            <button onclick="admin.hideEditUserForm()" class="close-btn">✕</button>
+        </div>
+
+        <form id="edit-user-form">
+            <input type="hidden" id="edit-user-id">
+
+            <div class="form-group">
+                <label for="edit-username">Логин</label>
+                <input id="edit-username" readonly style="background: #f8f9fa; color: #666;">
+                <small class="form-hint">Логин нельзя изменить</small>
+            </div>
+
+            <div class="form-group">
+                <label for="edit-fullName">Полное имя *</label>
+                <input name="fullName" id="edit-fullName" required>
+            </div>
+
+            <div class="form-group">
+                <label for="edit-role">Роль *</label>
+                <select name="role" id="edit-role" required>
+                    <option value="admin">👑 Администратор</option>
+                    <option value="moderator">⚙️ Модератор</option>
+                    <option value="skd">🔒 СКД</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="edit-email">Email</label>
+                <input name="email" id="edit-email" type="email">
+            </div>
+
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input name="isActive" id="edit-isActive" type="checkbox">
+                    Пользователь активен
+                </label>
+            </div>
+
+            <div class="modal-actions">
+                <button type="submit" class="primary-btn">
+                    <span class="btn-text">💾 Сохранить</span>
+                    <span class="btn-loading hidden">🔄 Сохранение...</span>
+                </button>
+                <button type="button" onclick="admin.hideEditUserForm()" class="secondary-btn">
+                    ❌ Отмена
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Модальное окно системной информации -->
+<div id="system-info-modal" class="modal hidden">
+    <div class="modal-content modal-large">
+        <div class="modal-header">
+            <h3>📊 Системная информация</h3>
+            <button onclick="admin.hideSystemInfo()" class="close-btn">✕</button>
+        </div>
+
+        <div id="system-info-content" style="padding: 25px;">
+            <div class="loading">Загрузка системной информации...</div>
+        </div>
+
+        <div class="modal-actions">
+            <button onclick="admin.refreshSystemInfo()" class="secondary-btn">🔄 Обновить</button>
+            <button onclick="admin.hideSystemInfo()" class="secondary-btn">❌ Закрыть</button>
+        </div>
+    </div>
+</div>
+
+<!-- Подключаем скрипты -->
+<script src="/js/utils.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/admin.js"></script>
+<script src="/js/app.js"></script>
+
+<script>
+    // Инициализация при загрузке страницы
+    document.addEventListener('DOMContentLoaded', async () => {
+        if (await auth.check()) {
+            if (!auth.hasRole(['admin'])) {
+                utils.showAlert('error', 'Недостаточно прав доступа');
+                window.location.href = '/';
+                return;
+            }
+            await admin.init();
+        }
+    });
+</script>
+</body>
+</html>
