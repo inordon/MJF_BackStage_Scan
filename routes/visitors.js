@@ -81,8 +81,17 @@ const visitorValidation = [
 // Получить всех посетителей с информацией о событиях
 router.get('/', requireAuth, async (req, res) => {
     try {
-        const { page = 1, limit = 25, status, search, event_id } = req.query;
+        // Исправляем параметры с безопасными значениями по умолчанию
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.max(1, Math.min(100, parseInt(req.query.limit) || 25)); // Ограничиваем максимум 100
         const offset = (page - 1) * limit;
+
+        // Безопасно обрабатываем остальные параметры
+        const status = req.query.status && ['active', 'blocked'].includes(req.query.status) ? req.query.status : null;
+        const search = req.query.search ? req.query.search.trim() : null;
+        const event_id = req.query.event_id && !isNaN(parseInt(req.query.event_id)) ? parseInt(req.query.event_id) : null;
+
+        console.log('Параметры запроса посетителей:', { page, limit, offset, status, search, event_id });
 
         let queryText = `
             SELECT v.id, v.visitor_uuid, v.last_name, v.first_name, v.middle_name,
@@ -102,7 +111,7 @@ router.get('/', requireAuth, async (req, res) => {
         const queryParams = [];
         const conditions = [];
 
-        if (status && ['active', 'blocked'].includes(status)) {
+        if (status) {
             conditions.push(`v.status = $${queryParams.length + 1}`);
             queryParams.push(status);
         }
@@ -112,7 +121,7 @@ router.get('/', requireAuth, async (req, res) => {
             queryParams.push(event_id);
         }
 
-        if (search) {
+        if (search && search.length > 0) {
             conditions.push(`(
                 v.last_name ILIKE $${queryParams.length + 1} OR 
                 v.first_name ILIKE $${queryParams.length + 1} OR 
@@ -135,6 +144,9 @@ router.get('/', requireAuth, async (req, res) => {
 
         queryParams.push(limit, offset);
 
+        console.log('SQL запрос:', queryText);
+        console.log('Параметры:', queryParams);
+
         const result = await query(queryText, queryParams);
 
         // Получаем общее количество записей
@@ -148,6 +160,8 @@ router.get('/', requireAuth, async (req, res) => {
 
         const countResult = await query(countQuery, countParams);
         const total = parseInt(countResult.rows[0].total);
+
+        console.log(`Найдено посетителей: ${result.rows.length}, всего: ${total}`);
 
         res.json({
             visitors: result.rows.map(visitor => ({
@@ -174,8 +188,8 @@ router.get('/', requireAuth, async (req, res) => {
                 last_scan: visitor.last_scan
             })),
             pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
+                page: page,
+                limit: limit,
                 total: total,
                 pages: Math.ceil(total / limit)
             }
@@ -183,6 +197,8 @@ router.get('/', requireAuth, async (req, res) => {
 
     } catch (err) {
         console.error('Ошибка получения посетителей:', err);
+        console.error('Стек ошибки:', err.stack);
+
         res.status(500).json({
             error: 'Ошибка сервера при получении посетителей',
             details: process.env.NODE_ENV === 'development' ? err.message : undefined
@@ -280,9 +296,9 @@ router.post('/', requireAuth, upload.single('photo'), visitorValidation, async (
 
         // Получаем созданного посетителя с информацией о событии
         const createdVisitor = await query(`
-            SELECT v.*, e.name as event_name 
+            SELECT v.*, e.name as event_name
             FROM visitors v
-            LEFT JOIN events e ON v.event_id = e.id
+                     LEFT JOIN events e ON v.event_id = e.id
             WHERE v.id = $1
         `, [result]);
 
@@ -329,7 +345,7 @@ router.get('/events/active', requireAuth, async (req, res) => {
     try {
         const result = await query(`
             SELECT id, name, description, start_date, end_date, location
-            FROM events 
+            FROM events
             WHERE status = 'active' AND end_date >= CURRENT_DATE
             ORDER BY start_date ASC
         `);
@@ -373,30 +389,30 @@ router.get('/stats/overview', requireAuth, async (req, res) => {
         `);
 
         const eventStats = await query(`
-            SELECT 
+            SELECT
                 e.id, e.name,
                 COUNT(v.id) as visitors_count,
                 COUNT(s.id) as scans_count,
                 COUNT(CASE WHEN s.scan_date = CURRENT_DATE THEN 1 END) as today_scans
             FROM events e
-            LEFT JOIN visitors v ON e.id = v.event_id
-            LEFT JOIN scans s ON v.id = s.visitor_id
+                     LEFT JOIN visitors v ON e.id = v.event_id
+                     LEFT JOIN scans s ON v.id = s.visitor_id
             WHERE e.status = 'active'
             GROUP BY e.id, e.name
             ORDER BY visitors_count DESC
-            LIMIT 5
+                LIMIT 5
         `);
 
         const recentActivity = await query(`
-            SELECT s.*, v.last_name, v.first_name, v.middle_name, 
+            SELECT s.*, v.last_name, v.first_name, v.middle_name,
                    e.name as event_name, u.full_name as scanned_by_name
             FROM scans s
-            JOIN visitors v ON s.visitor_id = v.id
-            LEFT JOIN events e ON v.event_id = e.id
-            LEFT JOIN users u ON s.scanned_by = u.id
+                     JOIN visitors v ON s.visitor_id = v.id
+                     LEFT JOIN events e ON v.event_id = e.id
+                     LEFT JOIN users u ON s.scanned_by = u.id
             WHERE s.scan_date >= CURRENT_DATE - INTERVAL '7 days'
             ORDER BY s.scanned_at DESC
-            LIMIT 10
+                LIMIT 10
         `);
 
         res.json({
