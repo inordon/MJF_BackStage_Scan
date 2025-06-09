@@ -41,7 +41,7 @@
                 <option value="blocked">Заблокированные</option>
             </select>
             <select id="event-filter">
-                <option value="">Все события</option>
+                <option value="">🔄 Загрузка событий...</option>
             </select>
             <button onclick="app.visitors.filter()">🔍 Найти</button>
             <button onclick="app.visitors.resetFilters()">🔄 Сброс</button>
@@ -66,7 +66,7 @@
     <div id="add-visitor" class="content">
         <form id="visitor-form" enctype="multipart/form-data">
             <select name="eventId" required>
-                <option value="">Выберите событие</option>
+                <option value="">🔄 Загрузка событий...</option>
             </select>
             <input name="lastName" placeholder="Фамилия" required>
             <input name="firstName" placeholder="Имя" required>
@@ -125,23 +125,6 @@
         // Инициализация
         async init() {
             console.log('🚀 Инициализация приложения...');
-
-            // Проверяем готовность DOM
-            console.log('🔍 Проверка готовности DOM...');
-            const requiredElements = [
-                'event-filter',
-                'search-input',
-                'status-filter',
-                'visitors-table',
-                'visitor-form'
-            ];
-
-            const missingElements = requiredElements.filter(id => !document.getElementById(id));
-            if (missingElements.length > 0) {
-                console.error('❌ Не найдены элементы DOM:', missingElements);
-                // Подождем немного и попробуем снова
-                await new Promise(resolve => setTimeout(resolve, 100));
-            }
 
             this.setupEventListeners();
 
@@ -490,33 +473,69 @@
             testEventsAPI() {
                 console.log('🧪 Тестирование API событий...');
 
-                // Тест 1: Проверяем активные события
-                console.log('📡 Тест 1: /api/visitors/events/active');
+                // Тест 1: Проверяем основной endpoint событий
+                console.log('📡 Тест 1: /api/events');
+                fetch('/api/events')
+                    .then(response => {
+                        console.log('📊 Статус ответа /api/events:', response.status, response.statusText);
+                        return response.json();
+                    })
+                    .then(data => {
+                        console.log('📊 Ответ /api/events:', data);
+                        if (data.events) {
+                            console.log(`📊 Всего событий: ${data.events.length}`);
+                            const activeEvents = data.events.filter(e => e.status === 'active');
+                            console.log(`📊 Активных событий: ${activeEvents.length}`);
+
+                            activeEvents.forEach((event, i) => {
+                                console.log(`  ${i + 1}. ${event.name} (ID: ${event.id}, до: ${event.end_date})`);
+                            });
+                        } else {
+                            console.log('⚠️ Нет поля events в ответе /api/events');
+                        }
+                    })
+                    .catch(err => console.error('❌ Ошибка /api/events:', err));
+
+                // Тест 2: Проверяем альтернативный endpoint
+                console.log('📡 Тест 2: /api/visitors/events/active');
                 fetch('/api/visitors/events/active')
                     .then(response => {
-                        console.log('📊 Статус ответа:', response.status, response.statusText);
-                        console.log('📊 Headers:', [...response.headers.entries()]);
+                        console.log('📊 Статус ответа /api/visitors/events/active:', response.status, response.statusText);
                         return response.text();
                     })
                     .then(text => {
-                        console.log('📊 Сырой ответ:', text);
+                        console.log('📊 Сырой ответ /api/visitors/events/active:', text);
                         try {
                             const data = JSON.parse(text);
                             console.log('📊 Парсинг JSON успешен:', data);
-
-                            if (data.events) {
-                                console.log(`📊 Найдено событий: ${data.events.length}`);
-                                data.events.forEach((event, i) => {
-                                    console.log(`  ${i + 1}. ${event.name} (ID: ${event.id}, статус: ${event.status || 'unknown'})`);
-                                });
-                            } else {
-                                console.log('⚠️ Нет поля events в ответе');
-                            }
                         } catch (e) {
                             console.error('❌ Ошибка парсинга JSON:', e);
                         }
                     })
-                    .catch(err => console.error('❌ Ошибка запроса:', err));
+                    .catch(err => console.error('❌ Ошибка /api/visitors/events/active:', err));
+
+                // Тест 3: Проверяем состояние фильтра
+                console.log('📡 Тест 3: Состояние DOM');
+                const filter = document.getElementById('event-filter');
+                if (filter) {
+                    console.log('📊 Фильтр найден, опций:', filter.options.length);
+                    for (let i = 0; i < filter.options.length; i++) {
+                        console.log(`  ${i}: "${filter.options[i].text}" (value: "${filter.options[i].value}")`);
+                    }
+                } else {
+                    console.error('❌ Фильтр не найден в DOM');
+                }
+
+                // Тест 4: Проверяем форму
+                const formSelect = document.querySelector('#visitor-form select[name="eventId"]');
+                if (formSelect) {
+                    console.log('📊 Форма найдена, опций:', formSelect.options.length);
+                    for (let i = 0; i < formSelect.options.length; i++) {
+                        console.log(`  Форма ${i}: "${formSelect.options[i].text}" (value: "${formSelect.options[i].value}")`);
+                    }
+                } else {
+                    console.error('❌ Форма не найдена в DOM');
+                }
 
                 app.showAlert('info', 'Тест API запущен, смотрите консоль для результатов');
             }
@@ -536,18 +555,40 @@
                         return;
                     }
 
+                    // Показываем состояние загрузки
+                    filter.innerHTML = '<option value="">🔄 Загрузка событий...</option>';
+
                     console.log('📡 Отправка запроса к API...');
-                    const res = await fetch('/api/visitors/events/active');
-                    console.log('📊 Статус ответа:', res.status, res.statusText);
 
-                    if (!res.ok) {
-                        const errorText = await res.text();
-                        console.error('❌ Ошибка ответа сервера:', errorText);
-                        throw new Error(`HTTP ${res.status}: ${errorText}`);
+                    // ИСПРАВЛЕНО: Пробуем разные endpoints
+                    let res, data;
+
+                    // Сначала пробуем основной endpoint событий
+                    try {
+                        res = await fetch('/api/events');
+                        if (res.ok) {
+                            data = await res.json();
+                            console.log('📊 Успешный ответ от /api/events:', data);
+                        } else {
+                            throw new Error(`HTTP ${res.status}`);
+                        }
+                    } catch (eventsError) {
+                        console.log('❌ /api/events недоступен, пробуем альтернативный endpoint');
+
+                        // Пробуем альтернативный endpoint для посетителей
+                        try {
+                            res = await fetch('/api/visitors/events/active');
+                            if (res.ok) {
+                                data = await res.json();
+                                console.log('📊 Успешный ответ от /api/visitors/events/active:', data);
+                            } else {
+                                throw new Error(`HTTP ${res.status}`);
+                            }
+                        } catch (visitorsError) {
+                            console.error('❌ Оба endpoint недоступны');
+                            throw new Error('Не удалось загрузить события');
+                        }
                     }
-
-                    const data = await res.json();
-                    console.log('📋 Полученные данные:', data);
 
                     // Проверяем элемент ПОСЛЕ запроса
                     const filterAfter = document.getElementById('event-filter');
@@ -559,26 +600,40 @@
                     console.log('🧹 Очистка фильтра...');
                     filterAfter.innerHTML = '<option value="">Все события</option>';
 
+                    // Обрабатываем полученные данные
+                    let events = [];
+
                     if (data.events && Array.isArray(data.events)) {
-                        if (data.events.length > 0) {
-                            console.log('✅ Добавление событий в фильтр...');
-                            data.events.forEach((event, index) => {
-                                const option = document.createElement('option');
-                                option.value = event.id;
-                                option.textContent = event.name;
-                                filterAfter.appendChild(option);
+                        // Фильтруем только активные события
+                        events = data.events.filter(event =>
+                            event.status === 'active' &&
+                            new Date(event.end_date) >= new Date()
+                        );
+                    }
+
+                    console.log('📋 Обработанные события:', events);
+
+                    if (events.length > 0) {
+                        console.log('✅ Добавление событий в фильтр...');
+                        events.forEach((event, index) => {
+                            console.log(`  📌 Событие ${index + 1}:`, {
+                                id: event.id,
+                                name: event.name,
+                                status: event.status,
+                                end_date: event.end_date
                             });
-                        } else {
+
                             const option = document.createElement('option');
-                            option.value = '';
-                            option.textContent = 'Нет активных событий';
-                            option.disabled = true;
+                            option.value = event.id;
+                            option.textContent = `${event.name} (${event.location || 'Без места'})`;
                             filterAfter.appendChild(option);
-                        }
+                        });
+                        console.log(`✅ Успешно добавлено ${events.length} событий в фильтр`);
                     } else {
+                        console.log('ℹ️ Нет активных событий');
                         const option = document.createElement('option');
                         option.value = '';
-                        option.textContent = 'Ошибка формата данных';
+                        option.textContent = 'Нет активных событий';
                         option.disabled = true;
                         filterAfter.appendChild(option);
                     }
@@ -600,14 +655,6 @@
             async loadActiveForForm() {
                 try {
                     console.log('Загрузка активных событий для формы...');
-                    const res = await fetch('/api/visitors/events/active');
-
-                    if (!res.ok) {
-                        const errorData = await res.json().catch(() => ({ error: 'Неизвестная ошибка' }));
-                        throw new Error(errorData.error || `HTTP ${res.status}`);
-                    }
-
-                    const data = await res.json();
 
                     const select = document.querySelector('#visitor-form select[name="eventId"]');
                     if (!select) {
@@ -615,22 +662,57 @@
                         return;
                     }
 
+                    // Показываем состояние загрузки
+                    select.innerHTML = '<option value="">🔄 Загрузка событий...</option>';
+
+                    // Пробуем разные endpoints
+                    let res, data;
+
+                    try {
+                        res = await fetch('/api/events');
+                        if (res.ok) {
+                            data = await res.json();
+                        } else {
+                            throw new Error(`HTTP ${res.status}`);
+                        }
+                    } catch (eventsError) {
+                        console.log('Пробуем альтернативный endpoint для формы');
+                        res = await fetch('/api/visitors/events/active');
+                        if (!res.ok) {
+                            throw new Error('Не удалось загрузить события для формы');
+                        }
+                        data = await res.json();
+                    }
+
                     select.innerHTML = '<option value="">Выберите событие</option>';
 
-                    if (data.events && Array.isArray(data.events) && data.events.length > 0) {
-                        data.events.forEach(event => {
+                    // Обрабатываем события
+                    let events = [];
+                    if (data.events && Array.isArray(data.events)) {
+                        events = data.events.filter(event =>
+                            event.status === 'active' &&
+                            new Date(event.end_date) >= new Date()
+                        );
+                    }
+
+                    if (events.length > 0) {
+                        events.forEach(event => {
                             const option = document.createElement('option');
                             option.value = event.id;
-                            option.textContent = event.name;
+                            option.textContent = `${event.name} (${this.formatDate(event.start_date)})`;
                             select.appendChild(option);
                         });
+                        console.log(`✅ Добавлено ${events.length} событий в форму`);
                     } else {
                         const option = document.createElement('option');
                         option.value = '';
                         option.textContent = 'Нет активных событий';
                         option.disabled = true;
                         select.appendChild(option);
+                        console.log('ℹ️ Нет активных событий для формы');
                     }
+
+                    console.log('Форма событий обновлена успешно');
                 } catch (err) {
                     console.error('Ошибка загрузки активных событий для формы:', err);
 
@@ -645,15 +727,38 @@
 
             async load() {
                 try {
+                    console.log('Загрузка всех событий...');
                     const res = await fetch('/api/events');
 
                     if (!res.ok) {
-                        const errorData = await res.json().catch(() => ({ error: 'Неизвестная ошибка' }));
+                        // Если API недоступен, попробуем создать тестовые события
+                        console.log('API событий недоступен, проверяем возможность создания тестовых событий...');
+                        await this.createTestEventsIfNeeded();
+
+                        const errorData = await res.json().catch(() => ({ error: 'API событий недоступен' }));
                         throw new Error(errorData.error || `HTTP ${res.status}`);
                     }
 
                     const data = await res.json();
-                    app.state.events = data.events || [];
+                    console.log('События загружены:', data);
+
+                    // Если событий нет, предлагаем создать тестовые
+                    if (!data.events || data.events.length === 0) {
+                        console.log('События не найдены, создаем тестовые...');
+                        await this.createTestEventsIfNeeded();
+
+                        // Пробуем загрузить снова
+                        const retryRes = await fetch('/api/events');
+                        if (retryRes.ok) {
+                            const retryData = await retryRes.json();
+                            app.state.events = retryData.events || [];
+                        } else {
+                            app.state.events = [];
+                        }
+                    } else {
+                        app.state.events = data.events || [];
+                    }
+
                     this.render();
                 } catch (err) {
                     console.error('Ошибка загрузки событий:', err);
@@ -666,9 +771,76 @@
                         <h3>❌ Ошибка загрузки событий</h3>
                         <p>${err.message}</p>
                         <button onclick="app.events.load()" style="margin-top: 10px;">🔄 Попробовать снова</button>
+                        <button onclick="app.events.createTestEventsIfNeeded()" style="margin-top: 10px;">➕ Создать тестовые события</button>
                     </div>
                 `;
                     }
+                }
+            },
+
+            // Создание тестовых событий если их нет
+            async createTestEventsIfNeeded() {
+                try {
+                    console.log('Попытка создания тестовых событий...');
+
+                    const testEvents = [
+                        {
+                            name: 'IT-Конференция 2024',
+                            description: 'Ежегодная конференция по информационным технологиям',
+                            start_date: '2024-12-01',
+                            end_date: '2024-12-31',
+                            location: 'Москва, ЦВК "Экспоцентр"',
+                            status: 'active'
+                        },
+                        {
+                            name: 'Выставка инноваций',
+                            description: 'Выставка новых технологий и стартапов',
+                            start_date: '2024-11-15',
+                            end_date: '2024-12-15',
+                            location: 'СПб, Ленэкспо',
+                            status: 'active'
+                        },
+                        {
+                            name: 'Семинар по безопасности',
+                            description: 'Обучающий семинар по кибербезопасности',
+                            start_date: '2024-11-01',
+                            end_date: '2024-12-01',
+                            location: 'Онлайн',
+                            status: 'active'
+                        }
+                    ];
+
+                    let createdCount = 0;
+                    for (const eventData of testEvents) {
+                        try {
+                            const res = await fetch('/api/events', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(eventData)
+                            });
+
+                            if (res.ok) {
+                                createdCount++;
+                                console.log(`✅ Создано событие: ${eventData.name}`);
+                            } else {
+                                console.log(`⚠️ Не удалось создать событие: ${eventData.name}`);
+                            }
+                        } catch (err) {
+                            console.log(`❌ Ошибка создания события ${eventData.name}:`, err.message);
+                        }
+                    }
+
+                    if (createdCount > 0) {
+                        app.showAlert('success', `Создано ${createdCount} тестовых событий`);
+                        // Обновляем фильтры
+                        await this.loadActiveForFilters();
+                        await this.loadActiveForForm();
+                    } else {
+                        console.log('Не удалось создать тестовые события');
+                    }
+
+                } catch (err) {
+                    console.error('Ошибка создания тестовых событий:', err);
                 }
             },
 
@@ -687,6 +859,7 @@
                     <h3>📋 События не найдены</h3>
                     <p>Создайте первое событие для управления посетителями</p>
                     <button onclick="app.events.showCreateForm()" style="margin-top: 15px;">➕ Создать событие</button>
+                    <button onclick="app.events.createTestEventsIfNeeded()" style="margin-top: 10px;">🎯 Создать тестовые события</button>
                 </div>
             `;
                     return;
@@ -710,10 +883,10 @@
                 </div>
 
                 <div class="stats">
-                    <span title="Всего посетителей">👥 ${e.stats.total_visitors}</span>
-                    <span title="Активных посетителей">✅ ${e.stats.active_visitors}</span>
-                    <span title="Всего сканирований">📱 ${e.stats.total_scans}</span>
-                    <span title="Сканирований сегодня">📊 ${e.stats.today_scans}</span>
+                    <span title="Всего посетителей">👥 ${e.stats?.total_visitors || 0}</span>
+                    <span title="Активных посетителей">✅ ${e.stats?.active_visitors || 0}</span>
+                    <span title="Всего сканирований">📱 ${e.stats?.total_scans || 0}</span>
+                    <span title="Сканирований сегодня">📊 ${e.stats?.today_scans || 0}</span>
                 </div>
 
                 ${app.state.currentUser.role !== 'skd' ? `
@@ -832,10 +1005,10 @@
 
                     <h4 style="margin-top: 20px;">📈 Статистика:</h4>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
-                        <div>Всего посетителей: <strong>${data.stats.total_visitors}</strong></div>
-                        <div>Активных: <strong>${data.stats.active_visitors}</strong></div>
-                        <div>Всего сканирований: <strong>${data.stats.total_scans}</strong></div>
-                        <div>Сегодня: <strong>${data.stats.today_scans}</strong></div>
+                        <div>Всего посетителей: <strong>${data.stats?.total_visitors || 0}</strong></div>
+                        <div>Активных: <strong>${data.stats?.active_visitors || 0}</strong></div>
+                        <div>Всего сканирований: <strong>${data.stats?.total_scans || 0}</strong></div>
+                        <div>Сегодня: <strong>${data.stats?.today_scans || 0}</strong></div>
                     </div>
 
                     ${data.created_by_name ? `<p style="margin-top: 15px; font-size: 12px; color: #666;">Создано: ${data.created_by_name}</p>` : ''}
@@ -1019,19 +1192,19 @@
                 const overview = document.getElementById('stats-overview');
                 overview.innerHTML = `
                 <div class="stat-card">
-                    <div class="stat-number">${data.visitors.total_visitors}</div>
+                    <div class="stat-number">${data.visitors?.total_visitors || 0}</div>
                     <div class="stat-label">Всего посетителей</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-number">${data.visitors.active_visitors}</div>
+                    <div class="stat-number">${data.visitors?.active_visitors || 0}</div>
                     <div class="stat-label">Активных</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-number">${data.scans.today_scans}</div>
+                    <div class="stat-number">${data.scans?.today_scans || 0}</div>
                     <div class="stat-label">Сканирований сегодня</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-number">${data.scans.week_scans}</div>
+                    <div class="stat-number">${data.scans?.week_scans || 0}</div>
                     <div class="stat-label">За неделю</div>
                 </div>
             `;
@@ -1331,6 +1504,7 @@
         loadEvents: () => app.events.loadActiveForFilters(),
         state: () => console.log('App state:', app.state),
         checkAuth: () => app.auth.check(),
+        createTestEvents: () => app.events.createTestEventsIfNeeded(),
 
         // Принудительное обновление фильтра
         forceUpdateFilter: async () => {
@@ -1350,10 +1524,56 @@
                 console.error('❌ Ошибка обновления:', err);
                 filter.innerHTML = '<option value="">❌ Ошибка</option>';
             }
+        },
+
+        // Диагностика системы
+        diagnose: async () => {
+            console.log('🔍 Диагностика системы событий...');
+
+            // Проверяем API
+            const apiTests = [
+                { name: 'События (основной)', url: '/api/events' },
+                { name: 'События (альтернативный)', url: '/api/visitors/events/active' },
+                { name: 'Авторизация', url: '/api/auth/check' }
+            ];
+
+            for (const test of apiTests) {
+                try {
+                    const res = await fetch(test.url);
+                    const data = await res.json();
+                    console.log(`✅ ${test.name}:`, res.status, data);
+                } catch (err) {
+                    console.log(`❌ ${test.name}:`, err.message);
+                }
+            }
+
+            // Проверяем DOM
+            const elements = [
+                'event-filter',
+                'visitor-form',
+                'events-list'
+            ];
+
+            elements.forEach(id => {
+                const el = document.getElementById(id);
+                console.log(`${el ? '✅' : '❌'} Элемент #${id}:`, el ? 'найден' : 'отсутствует');
+            });
+
+            // Проверяем состояние приложения
+            console.log('📊 Состояние приложения:');
+            console.log('- Пользователь:', app.state.currentUser);
+            console.log('- События:', app.state.events?.length || 0);
+            console.log('- Посетители:', app.state.visitors?.length || 0);
         }
     };
 
     console.log('🛠️ Доступны функции отладки: window.debugApp');
+    console.log('   - debugApp.testEventsAPI() - тест API событий');
+    console.log('   - debugApp.loadEvents() - перезагрузка событий');
+    console.log('   - debugApp.forceUpdateFilter() - принудительное обновление');
+    console.log('   - debugApp.createTestEvents() - создать тестовые события');
+    console.log('   - debugApp.diagnose() - полная диагностика');
+    console.log('   - debugApp.state() - состояние приложения');
 
     // Запуск приложения
     document.addEventListener('DOMContentLoaded', () => app.init());
