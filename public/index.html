@@ -1124,26 +1124,47 @@
                         <option value="skd">СКД</option>
                         <option value="admin">Администратор</option>
                     </select>
-                    <input name="email" type="email" placeholder="Email">
+                    <input name="email" type="email" placeholder="Email (необязательно)">
                     <button type="submit">Создать</button>
                 </form>
             `, async (formData) => {
                     try {
+                        const userData = Object.fromEntries(formData);
+
+                        // Убираем пустые поля
+                        Object.keys(userData).forEach(key => {
+                            if (userData[key] === '' || userData[key] === null) {
+                                delete userData[key];
+                            }
+                        });
+
+                        console.log('📝 Создание пользователя:', {
+                            username: userData.username,
+                            fullName: userData.fullName,
+                            role: userData.role,
+                            email: userData.email,
+                            hasPassword: !!userData.password
+                        });
+
                         const res = await fetch('/api/admin/users', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(Object.fromEntries(formData))
+                            body: JSON.stringify(userData)
                         });
 
+                        const data = await res.json();
+                        console.log('📊 Ответ сервера:', data);
+
                         if (res.ok) {
-                            app.showAlert('success', 'Пользователь создан');
+                            app.showAlert('success', 'Пользователь создан успешно');
                             this.load();
                         } else {
-                            const data = await res.json();
-                            app.showAlert('error', data.error);
+                            console.error('❌ Ошибка создания пользователя:', data);
+                            app.showAlert('error', data.error || 'Ошибка создания пользователя');
                         }
                     } catch (err) {
-                        app.showAlert('error', 'Ошибка создания пользователя');
+                        console.error('❌ Ошибка сети:', err);
+                        app.showAlert('error', 'Ошибка сети: ' + err.message);
                     }
                 });
             },

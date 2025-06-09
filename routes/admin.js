@@ -112,16 +112,29 @@ router.get('/users', requireAuth, canManageUsers, async (req, res) => {
 
     } catch (err) {
         console.error('Ошибка получения списка пользователей:', err);
-        res.status(500).json({ error: 'Ошибка сервера' });
+        res.status(500).json({
+            error: 'Ошибка сервера при получении пользователей',
+            details: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 });
 
 // Создание нового пользователя
 router.post('/users', requireAuth, canManageUsers, userValidation, async (req, res) => {
     try {
+        console.log('📝 Создание нового пользователя...');
+        console.log('📋 Данные запроса:', {
+            username: req.body.username,
+            fullName: req.body.fullName,
+            role: req.body.role,
+            email: req.body.email,
+            hasPassword: !!req.body.password
+        });
+
         // Проверка валидации
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
+            console.log('❌ Ошибки валидации:', errors.array());
             return res.status(400).json({
                 error: 'Ошибки валидации',
                 details: errors.array()
@@ -130,6 +143,16 @@ router.post('/users', requireAuth, canManageUsers, userValidation, async (req, r
 
         const { username, password, fullName, role, email } = req.body;
 
+        // Проверяем что все обязательные поля заполнены
+        if (!username || !password || !fullName || !role) {
+            console.log('❌ Не все обязательные поля заполнены');
+            return res.status(400).json({
+                error: 'Не все обязательные поля заполнены',
+                required: ['username', 'password', 'fullName', 'role']
+            });
+        }
+
+        console.log('🔍 Проверка уникальности логина...');
         // Проверяем уникальность логина
         const existingUser = await query(
             'SELECT id FROM users WHERE username = $1',
@@ -137,25 +160,30 @@ router.post('/users', requireAuth, canManageUsers, userValidation, async (req, r
         );
 
         if (existingUser.rows.length > 0) {
+            console.log('❌ Пользователь с таким логином уже существует');
             return res.status(400).json({ error: 'Пользователь с таким логином уже существует' });
         }
 
         // Проверяем уникальность email (если указан)
         if (email) {
+            console.log('🔍 Проверка уникальности email...');
             const existingEmail = await query(
                 'SELECT id FROM users WHERE email = $1',
                 [email]
             );
 
             if (existingEmail.rows.length > 0) {
+                console.log('❌ Пользователь с таким email уже существует');
                 return res.status(400).json({ error: 'Пользователь с таким email уже существует' });
             }
         }
 
+        console.log('🔐 Хеширование пароля...');
         // Хешируем пароль
         const saltRounds = 12;
         const passwordHash = await bcrypt.hash(password, saltRounds);
 
+        console.log('💾 Сохранение пользователя в БД...');
         // Создаем пользователя
         const newUserResult = await query(`
             INSERT INTO users (
@@ -165,10 +193,15 @@ router.post('/users', requireAuth, canManageUsers, userValidation, async (req, r
                 RETURNING id, username, full_name, role, email, is_active, created_at
         `, [
             username, passwordHash, fullName, role,
-            email, req.user.id
+            email || null, req.user.id
         ]);
 
         const newUser = newUserResult.rows[0];
+        console.log('✅ Пользователь создан успешно:', {
+            id: newUser.id,
+            username: newUser.username,
+            role: newUser.role
+        });
 
         res.status(201).json({
             message: 'Пользователь успешно создан',
@@ -184,8 +217,37 @@ router.post('/users', requireAuth, canManageUsers, userValidation, async (req, r
         });
 
     } catch (err) {
-        console.error('Ошибка создания пользователя:', err);
-        res.status(500).json({ error: 'Ошибка сервера при создании пользователя' });
+        console.error('❌ Ошибка создания пользователя:', err);
+        console.error('📋 Стек ошибки:', err.stack);
+
+        // Детальная обработка ошибок
+        let errorMessage = 'Ошибка сервера при создании пользователя';
+        let statusCode = 500;
+
+        if (err.code === '23505') { // Unique constraint violation
+            if (err.constraint && err.constraint.includes('username')) {
+                errorMessage = 'Пользователь с таким логином уже существует';
+                statusCode = 400;
+            } else if (err.constraint && err.constraint.includes('email')) {
+                errorMessage = 'Пользователь с таким email уже существует';
+                statusCode = 400;
+            }
+        } else if (err.code === '23503') { // Foreign key constraint violation
+            errorMessage = 'Ошибка связей в базе данных';
+            statusCode = 400;
+        } else if (err.code === '23502') { // Not null constraint violation
+            errorMessage = 'Не заполнены обязательные поля';
+            statusCode = 400;
+        }
+
+        res.status(statusCode).json({
+            error: errorMessage,
+            details: process.env.NODE_ENV === 'development' ? {
+                message: err.message,
+                code: err.code,
+                constraint: err.constraint
+            } : undefined
+        });
     }
 });
 
@@ -194,6 +256,8 @@ router.put('/users/:id', requireAuth, canManageUsers, async (req, res) => {
     try {
         const { id } = req.params;
         const { fullName, role, email, isActive } = req.body;
+
+        console.log(`📝 Обновление пользователя ID: ${id}`);
 
         // Проверяем существование пользователя
         const existingUser = await query('SELECT * FROM users WHERE id = $1', [id]);
@@ -234,6 +298,8 @@ router.put('/users/:id', requireAuth, canManageUsers, async (req, res) => {
             id
         ]);
 
+        console.log('✅ Пользователь обновлен успешно');
+
         res.json({
             message: 'Пользователь успешно обновлен',
             user: {
@@ -248,8 +314,11 @@ router.put('/users/:id', requireAuth, canManageUsers, async (req, res) => {
         });
 
     } catch (err) {
-        console.error('Ошибка обновления пользователя:', err);
-        res.status(500).json({ error: 'Ошибка сервера при обновлении пользователя' });
+        console.error('❌ Ошибка обновления пользователя:', err);
+        res.status(500).json({
+            error: 'Ошибка сервера при обновлении пользователя',
+            details: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 });
 
@@ -258,6 +327,8 @@ router.post('/users/:id/reset-password', requireAuth, canManageUsers, async (req
     try {
         const { id } = req.params;
         const { newPassword } = req.body;
+
+        console.log(`🔐 Сброс пароля для пользователя ID: ${id}`);
 
         if (!newPassword || newPassword.length < 6) {
             return res.status(400).json({ error: 'Новый пароль должен содержать минимум 6 символов' });
@@ -282,14 +353,19 @@ router.post('/users/:id/reset-password', requireAuth, canManageUsers, async (req
         // Завершаем все сессии пользователя
         await query('DELETE FROM user_sessions WHERE user_id = $1', [id]);
 
+        console.log('✅ Пароль сброшен успешно');
+
         res.json({
             message: 'Пароль успешно сброшен и все сессии пользователя завершены',
             username: userCheck.rows[0].username
         });
 
     } catch (err) {
-        console.error('Ошибка сброса пароля:', err);
-        res.status(500).json({ error: 'Ошибка сервера при сбросе пароля' });
+        console.error('❌ Ошибка сброса пароля:', err);
+        res.status(500).json({
+            error: 'Ошибка сервера при сбросе пароля',
+            details: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 });
 
@@ -315,8 +391,11 @@ router.post('/users/:id/terminate-sessions', requireAuth, canManageUsers, async 
         });
 
     } catch (err) {
-        console.error('Ошибка завершения сессий:', err);
-        res.status(500).json({ error: 'Ошибка сервера при завершении сессий' });
+        console.error('❌ Ошибка завершения сессий:', err);
+        res.status(500).json({
+            error: 'Ошибка сервера при завершении сессий',
+            details: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 });
 
@@ -324,6 +403,8 @@ router.post('/users/:id/terminate-sessions', requireAuth, canManageUsers, async 
 router.delete('/users/:id', requireAuth, canManageUsers, async (req, res) => {
     try {
         const { id } = req.params;
+
+        console.log(`🗑️ Удаление пользователя ID: ${id}`);
 
         // Нельзя удалить самого себя
         if (parseInt(id) === req.user.id) {
@@ -348,14 +429,19 @@ router.delete('/users/:id', requireAuth, canManageUsers, async (req, res) => {
         // Удаляем пользователя
         const result = await query('DELETE FROM users WHERE id = $1 RETURNING username', [id]);
 
+        console.log('✅ Пользователь удален успешно');
+
         res.json({
             message: 'Пользователь успешно удален',
             username: result.rows[0].username
         });
 
     } catch (err) {
-        console.error('Ошибка удаления пользователя:', err);
-        res.status(500).json({ error: 'Ошибка сервера при удалении пользователя' });
+        console.error('❌ Ошибка удаления пользователя:', err);
+        res.status(500).json({
+            error: 'Ошибка сервера при удалении пользователя',
+            details: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 });
 
@@ -374,7 +460,7 @@ router.get('/health', async (req, res) => {
         });
 
     } catch (err) {
-        console.error('Ошибка проверки здоровья системы:', err);
+        console.error('❌ Ошибка проверки здоровья системы:', err);
         res.status(503).json({
             healthy: false,
             error: 'Ошибка проверки системы',
@@ -390,11 +476,11 @@ router.get('/stats', requireAuth, requireRole(['admin']), async (req, res) => {
 
         // Дополнительная статистика
         const additionalStats = await query(`
-            SELECT 
+            SELECT
                 COUNT(CASE WHEN v.created_at >= CURRENT_DATE - INTERVAL '7 days' THEN 1 END) as recent_changes,
                 COUNT(CASE WHEN s.scanned_at >= CURRENT_TIMESTAMP - INTERVAL '1 hour' THEN 1 END) as recent_scans
             FROM visitors v
-            FULL OUTER JOIN scans s ON 1=1
+                     FULL OUTER JOIN scans s ON 1=1
         `);
 
         const systemStats = {
@@ -416,8 +502,11 @@ router.get('/stats', requireAuth, requireRole(['admin']), async (req, res) => {
         res.json(systemStats);
 
     } catch (err) {
-        console.error('Ошибка получения статистики:', err);
-        res.status(500).json({ error: 'Ошибка сервера' });
+        console.error('❌ Ошибка получения статистики:', err);
+        res.status(500).json({
+            error: 'Ошибка сервера',
+            details: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 });
 
@@ -469,8 +558,11 @@ router.post('/cleanup', requireAuth, requireRole(['admin']), async (req, res) =>
         });
 
     } catch (err) {
-        console.error('Ошибка очистки данных:', err);
-        res.status(500).json({ error: 'Ошибка сервера при очистке данных' });
+        console.error('❌ Ошибка очистки данных:', err);
+        res.status(500).json({
+            error: 'Ошибка сервера при очистке данных',
+            details: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 });
 
@@ -482,36 +574,36 @@ router.get('/activity-logs', requireAuth, requireRole(['admin']), async (req, re
 
         // Получаем логи из таблицы сканирований (как пример активности)
         let queryText = `
-            SELECT 
+            SELECT
                 s.id, s.scan_type as action_type, s.scanned_at as timestamp,
                 s.ip_address, s.user_agent,
                 u.username, u.full_name,
                 v.last_name, v.first_name, v.middle_name
             FROM scans s
-                     LEFT JOIN users u ON s.scanned_by = u.id
-                     LEFT JOIN visitors v ON s.visitor_id = v.id
+                LEFT JOIN users u ON s.scanned_by = u.id
+                LEFT JOIN visitors v ON s.visitor_id = v.id
         `;
 
         const conditions = [];
         const params = [];
 
         if (user_id) {
-            conditions.push(`s.scanned_by = ${params.length + 1}`);
+            conditions.push(`s.scanned_by = $${params.length + 1}`);
             params.push(user_id);
         }
 
         if (action_type) {
-            conditions.push(`s.scan_type = ${params.length + 1}`);
+            conditions.push(`s.scan_type = $${params.length + 1}`);
             params.push(action_type);
         }
 
         if (date_from) {
-            conditions.push(`s.scan_date >= ${params.length + 1}`);
+            conditions.push(`s.scan_date >= $${params.length + 1}`);
             params.push(date_from);
         }
 
         if (date_to) {
-            conditions.push(`s.scan_date <= ${params.length + 1}`);
+            conditions.push(`s.scan_date <= $${params.length + 1}`);
             params.push(date_to);
         }
 
@@ -521,7 +613,7 @@ router.get('/activity-logs', requireAuth, requireRole(['admin']), async (req, re
 
         queryText += `
             ORDER BY s.scanned_at DESC
-            LIMIT ${params.length + 1} OFFSET ${params.length + 2}
+            LIMIT $${params.length + 1} OFFSET $${params.length + 2}
         `;
 
         params.push(limit, offset);
@@ -553,8 +645,11 @@ router.get('/activity-logs', requireAuth, requireRole(['admin']), async (req, re
         });
 
     } catch (err) {
-        console.error('Ошибка получения логов активности:', err);
-        res.status(500).json({ error: 'Ошибка сервера' });
+        console.error('❌ Ошибка получения логов активности:', err);
+        res.status(500).json({
+            error: 'Ошибка сервера',
+            details: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 });
 
@@ -632,8 +727,11 @@ router.get('/export/:type', requireAuth, requireRole(['admin']), async (req, res
         }
 
     } catch (err) {
-        console.error('Ошибка экспорта данных:', err);
-        res.status(500).json({ error: 'Ошибка сервера при экспорте данных' });
+        console.error('❌ Ошибка экспорта данных:', err);
+        res.status(500).json({
+            error: 'Ошибка сервера при экспорте данных',
+            details: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 });
 
