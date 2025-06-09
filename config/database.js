@@ -7,9 +7,13 @@ const dbConfig = {
     database: process.env.DB_NAME || 'visitor_system',
     user: process.env.DB_USER || 'visitor_admin',
     password: process.env.DB_PASSWORD || 'secure_password_123',
-    max: 20, // максимальное количество соединений в пуле
-    idleTimeoutMillis: 30000, // время ожидания неактивного соединения
-    connectionTimeoutMillis: 2000, // время ожидания подключения
+    max: process.env.NODE_ENV === 'production' ? 15 : 5, // Снижено с 20
+    min: 2, // Минимум соединений
+    idleTimeoutMillis: 10000, // Снижено с 30000
+    connectionTimeoutMillis: 3000, // Увеличено с 2000
+    acquireTimeoutMillis: 5000, // Новый параметр
+    statement_timeout: 30000, // Таймаут запросов
+    query_timeout: 20000
 };
 
 // Создание пула соединений

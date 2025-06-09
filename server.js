@@ -64,6 +64,8 @@ const generalLimiter = rateLimit({
     legacyHeaders: false,
     skip: (req) => {
         return req.url.startsWith('/uploads/') ||
+            req.url.startsWith('/css/') ||
+            req.url.startsWith('/js/') ||
             req.url.startsWith('/favicon.ico');
     }
 });
@@ -88,7 +90,20 @@ const apiLimiter = rateLimit({
 });
 
 // Middleware
-app.use(compression());
+app.use(compression({
+    level: 6,
+    threshold: 1024,
+    filter: (req, res) => {
+        // Не сжимать изображения и уже сжатые файлы
+        if (req.headers['x-no-compression'] ||
+            req.url.includes('.jpg') ||
+            req.url.includes('.png') ||
+            req.url.includes('.gif')) {
+            return false;
+        }
+        return compression.filter(req, res);
+    }
+}));
 
 // Детальное логирование
 if (process.env.NODE_ENV === 'development') {
@@ -119,9 +134,41 @@ app.use(session({
     rolling: true
 }));
 
-// Статические файлы
-app.use('/uploads', express.static(uploadDir));
-app.use(express.static('public'));
+// Оптимизированные статические файлы
+// Основные статические файлы с кэшированием
+app.use(express.static('public', {
+    maxAge: process.env.NODE_ENV === 'production' ? '1d' : '0',
+    etag: true,
+    lastModified: true,
+    index: false // Отключаем автоматический поиск index.html
+}));
+
+// Специальные настройки для JS файлов
+app.use('/js', express.static(path.join(__dirname, 'public/js'), {
+    maxAge: process.env.NODE_ENV === 'production' ? '1d' : '0',
+    setHeaders: (res, filePath) => {
+        res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+        if (process.env.NODE_ENV === 'production') {
+            res.setHeader('Cache-Control', 'public, max-age=86400'); // 1 день
+        }
+    }
+}));
+
+// Специальные настройки для CSS файлов
+app.use('/css', express.static(path.join(__dirname, 'public/css'), {
+    maxAge: process.env.NODE_ENV === 'production' ? '1d' : '0',
+    setHeaders: (res, filePath) => {
+        res.setHeader('Content-Type', 'text/css; charset=utf-8');
+        if (process.env.NODE_ENV === 'production') {
+            res.setHeader('Cache-Control', 'public, max-age=86400'); // 1 день
+        }
+    }
+}));
+
+// Загрузки (фото и QR коды)
+app.use('/uploads', express.static(uploadDir, {
+    maxAge: process.env.NODE_ENV === 'production' ? '7d' : '0' // Дольше кэшируем файлы
+}));
 
 // Импорт маршрутов
 const authRoutes = require('./routes/auth');
@@ -129,7 +176,8 @@ const visitorRoutes = require('./routes/visitors');
 const scanRoutes = require('./routes/scan');
 const adminRoutes = require('./routes/admin');
 const eventRoutes = require('./routes/events');
-const debugRoutes = require('./routes/debug');
+// Убираем debug routes в production
+const debugRoutes = process.env.NODE_ENV === 'development' ? require('./routes/debug') : null;
 
 // Маршруты API
 app.use('/api/auth', authLimiter, authRoutes);
@@ -137,14 +185,47 @@ app.use('/api/visitors', apiLimiter, visitorRoutes);
 app.use('/api/scan', apiLimiter, scanRoutes);
 app.use('/api/admin', apiLimiter, adminRoutes);
 app.use('/api/events', apiLimiter, eventRoutes);
-app.use('/api/debug', apiLimiter, debugRoutes);
 
-// Главная страница
-app.get('/', (req, res) => {
+// Debug routes только в development
+if (debugRoutes && process.env.NODE_ENV === 'development') {
+    app.use('/api/debug', apiLimiter, debugRoutes);
+}
+
+// Middleware для проверки авторизации на страницах
+function requireAuth(req, res, next) {
+    if (!req.session.userId) {
+        return res.redirect(`/login?return=${encodeURIComponent(req.path)}`);
+    }
+    next();
+}
+
+// Маршруты для HTML страниц
+// Главная страница - список посетителей
+app.get('/', requireAuth, (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Страница сканирования
+// Страница добавления посетителей
+app.get('/visitors.html', requireAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'visitors.html'));
+});
+
+// Страница управления событиями
+app.get('/events.html', requireAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'events.html'));
+});
+
+// Страница QR сканера
+app.get('/scanner.html', requireAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'scanner.html'));
+});
+
+// Страница статистики
+app.get('/stats.html', requireAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'stats.html'));
+});
+
+// Страница сканирования по UUID (внешний доступ)
 app.get('/scan/:uuid', async (req, res) => {
     const { uuid } = req.params;
 
@@ -158,6 +239,11 @@ app.get('/scan/:uuid', async (req, res) => {
 
 // Страница авторизации
 app.get('/login', (req, res) => {
+    // Если уже авторизован, перенаправляем на главную
+    if (req.session.userId) {
+        const returnUrl = req.query.return || '/';
+        return res.redirect(returnUrl);
+    }
     res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
@@ -167,7 +253,21 @@ app.get('/health', (req, res) => {
         status: 'ok',
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
-        version: process.env.APP_VERSION || '1.0.0'
+        version: process.env.APP_VERSION || '1.0.0',
+        environment: process.env.NODE_ENV || 'development'
+    });
+});
+
+// API health check для мониторинга
+app.get('/api/health', (req, res) => {
+    res.json({
+        healthy: true,
+        timestamp: new Date().toISOString(),
+        services: {
+            database: 'ok',
+            sessions: 'ok',
+            uploads: fs.existsSync(uploadDir) ? 'ok' : 'error'
+        }
     });
 });
 
@@ -190,7 +290,17 @@ app.use((err, req, res, next) => {
 
 // Обработка ошибок 404
 app.use((req, res) => {
-    res.status(404).json({ error: 'Страница не найдена' });
+    // Для API запросов возвращаем JSON
+    if (req.path.startsWith('/api/')) {
+        return res.status(404).json({ error: 'API endpoint не найден' });
+    }
+
+    // Для обычных запросов - HTML страница или редирект
+    if (req.session.userId) {
+        res.status(404).sendFile(path.join(__dirname, 'public', 'index.html'));
+    } else {
+        res.redirect('/login');
+    }
 });
 
 // Обработка глобальных ошибок
@@ -288,11 +398,11 @@ app.listen(PORT, '0.0.0.0', () => {
         console.log('   🔒 skd_user / skd123');
     }
 
-    console.log('✨ Новые возможности:');
-    console.log('   🎯 Управление событиями');
-    console.log('   📊 Статистика по событиям');
-    console.log('   🔗 Привязка посетителей к событиям');
-    console.log('   📋 Табличное отображение данных');
+    console.log('✨ Оптимизации:');
+    console.log('   📦 Сжатие включено');
+    console.log('   🚀 Кэширование статических файлов');
+    console.log('   🛡️ Rate limiting активен');
+    console.log('   📁 Разделенные JS/CSS файлы');
 });
 
 module.exports = app;

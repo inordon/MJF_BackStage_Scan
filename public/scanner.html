@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Сканер - Система посетителей</title>
+    <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" href="/css/components.css">
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>📱 QR Сканер</h1>
+        <div class="user-info">
+            <div class="user-badge" id="user-badge">Загрузка...</div>
+            <a href="/" class="back-btn">← Назад</a>
+        </div>
+    </div>
+
+    <div class="scanner-container">
+        <video id="qr-video" class="hidden"></video>
+        <div class="scanner-controls">
+            <button id="scanner-btn" onclick="scanner.toggle()">📹 Запустить сканер</button>
+            <button onclick="scanner.switchCamera()" class="secondary-btn">🔄 Переключить камеру</button>
+        </div>
+        <div id="scan-result" class="hidden"></div>
+    </div>
+
+    <!-- Ручной ввод штрихкода -->
+    <div class="manual-input">
+        <h3>Или введите штрихкод вручную:</h3>
+        <form id="manual-scan-form">
+            <input type="text" id="manual-barcode" placeholder="Введите штрихкод" required>
+            <button type="submit">Проверить</button>
+        </form>
+    </div>
+
+    <!-- История сканирований -->
+    <div class="scan-history">
+        <h3>Последние сканирования:</h3>
+        <div id="recent-scans"></div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/qr-scanner@1.4.2/qr-scanner.umd.min.js"></script>
+<script src="/js/utils.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/scanner.js"></script>
+
+<script>
+    // Инициализация
+    document.addEventListener('DOMContentLoaded', async () => {
+        if (await auth.check()) {
+            scanner.init();
+        }
+    });
+</script>
+</body>
+</html>
