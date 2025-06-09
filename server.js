@@ -129,6 +129,7 @@ const visitorRoutes = require('./routes/visitors');
 const scanRoutes = require('./routes/scan');
 const adminRoutes = require('./routes/admin');
 const eventRoutes = require('./routes/events');
+const debugRoutes = require('./routes/debug');
 
 // Маршруты API
 app.use('/api/auth', authLimiter, authRoutes);
@@ -136,6 +137,7 @@ app.use('/api/visitors', apiLimiter, visitorRoutes);
 app.use('/api/scan', apiLimiter, scanRoutes);
 app.use('/api/admin', apiLimiter, adminRoutes);
 app.use('/api/events', apiLimiter, eventRoutes);
+app.use('/api/debug', apiLimiter, debugRoutes);
 
 // Главная страница
 app.get('/', (req, res) => {
