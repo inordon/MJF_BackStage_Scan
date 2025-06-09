@@ -95,7 +95,9 @@
 
     <!-- Статистика -->
     <div id="stats" class="content">
-        <div style="position: relative;">
+        <!-- Заголовок с кнопками экспорта -->
+        <div class="stats-header-with-export">
+            <h2>📊 Статистика системы</h2>
             <div class="export-buttons-container">
                 <button class="export-button" onclick="app.stats.showExportModal()">
                     📊 Экспорт статистики
@@ -104,8 +106,12 @@
                     📋 Экспорт сканирований
                 </button>
             </div>
-            <div id="stats-overview" class="stats-grid"></div>
         </div>
+
+        <!-- Карточки общей статистики -->
+        <div id="stats-overview" class="stats-grid"></div>
+
+        <!-- Детальные таблицы и графики -->
         <div id="stats-tables"></div>
     </div>
 
