@@ -1,4 +1,4 @@
-// js/admin.js - Модуль администрирования
+// js/admin.js - Упрощенный модуль администрирования
 const admin = {
     currentPage: 1,
     totalPages: 1,
@@ -14,7 +14,6 @@ const admin = {
 
         await this.loadUsers();
         await this.loadSystemStats();
-        await this.loadActiveSessions();
         this.setupEventListeners();
 
         // Автообновление каждые 30 секунд
@@ -440,79 +439,6 @@ const admin = {
         }
     },
 
-    // Загрузка активных сессий
-    async loadActiveSessions() {
-        try {
-            const container = document.getElementById('active-sessions');
-            if (!container) return;
-
-            // Пока показываем заглушку, так как нет отдельного API для всех сессий
-            container.innerHTML = `
-                <div style="text-align: center; padding: 20px; color: #666;">
-                    <p>📊 Мониторинг активных сессий</p>
-                    <small>Функция будет добавлена в следующем обновлении</small>
-                </div>
-            `;
-
-        } catch (err) {
-            console.error('❌ Ошибка загрузки активных сессий:', err);
-        }
-    },
-
-    // Мониторинг системы
-    async loadSystemMonitoring() {
-        try {
-            const container = document.getElementById('system-monitoring');
-            if (!container) return;
-
-            const response = await fetch('/api/admin/health');
-            const data = await response.json();
-
-            if (response.ok) {
-                container.innerHTML = `
-                    <div class="stats-grid">
-                        <div class="stat-detail-card">
-                            <h4>🖥️ Статус системы</h4>
-                            <div class="stat-number" style="color: ${data.healthy ? '#28a745' : '#dc3545'}">
-                                ${data.healthy ? '✅' : '❌'}
-                            </div>
-                            <small>${data.healthy ? 'Система работает' : 'Есть проблемы'}</small>
-                        </div>
-                        <div class="stat-detail-card">
-                            <h4>🗄️ База данных</h4>
-                            <div class="stat-number" style="color: ${data.database?.healthy ? '#28a745' : '#dc3545'}">
-                                ${data.database?.healthy ? '✅' : '❌'}
-                            </div>
-                            <small>${data.database?.healthy ? 'Подключена' : 'Недоступна'}</small>
-                        </div>
-                        <div class="stat-detail-card">
-                            <h4>🕐 Время работы</h4>
-                            <div class="stat-number">${Math.floor(data.uptime / 3600)}ч</div>
-                            <small>Непрерывная работа</small>
-                        </div>
-                        <div class="stat-detail-card">
-                            <h4>📦 Версия</h4>
-                            <div class="stat-number">${data.version || '1.0.0'}</div>
-                            <small>Текущая версия</small>
-                        </div>
-                    </div>
-                `;
-            } else {
-                throw new Error(data.error);
-            }
-        } catch (err) {
-            console.error('❌ Ошибка мониторинга системы:', err);
-            const container = document.getElementById('system-monitoring');
-            if (container) {
-                container.innerHTML = `
-                    <div style="text-align: center; color: #dc3545; padding: 20px;">
-                        ❌ Ошибка загрузки информации о системе
-                    </div>
-                `;
-            }
-        }
-    },
-
     // Фильтрация пользователей
     filterUsers() {
         this.filters.role = document.getElementById('role-filter')?.value || '';
@@ -537,11 +463,6 @@ const admin = {
     async refreshUsers() {
         await this.loadUsers(this.currentPage);
         utils.showAlert('success', 'Список пользователей обновлен');
-    },
-
-    // Экспорт данных
-    async exportData() {
-        utils.showAlert('info', 'Функция экспорта данных будет добавлена в следующем обновлении');
     },
 
     // Показ формы создания пользователя
@@ -664,7 +585,6 @@ const admin = {
         setInterval(async () => {
             if (document.visibilityState === 'visible') {
                 await this.loadSystemStats();
-                await this.loadSystemMonitoring();
             }
         }, 30000);
     },

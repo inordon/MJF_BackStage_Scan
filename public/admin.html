@@ -37,9 +37,6 @@
         <button onclick="admin.showSystemInfo()" class="secondary-btn">
             📊 Системная информация
         </button>
-        <button onclick="admin.exportData()" class="secondary-btn">
-            📥 Экспорт данных
-        </button>
     </div>
 
     <!-- Фильтры для пользователей -->
@@ -94,22 +91,6 @@
     </div>
 
     <div id="users-pagination" class="pagination hidden"></div>
-
-    <!-- Мониторинг системы -->
-    <div class="stats-section">
-        <h3>🖥️ Мониторинг системы</h3>
-        <div class="system-monitoring" id="system-monitoring">
-            <div class="loading">Загрузка информации о системе...</div>
-        </div>
-    </div>
-
-    <!-- Активные сессии -->
-    <div class="stats-section">
-        <h3>🔐 Активные сессии</h3>
-        <div id="active-sessions">
-            <div class="loading">Загрузка активных сессий...</div>
-        </div>
-    </div>
 </div>
 
 <!-- Модальное окно создания пользователя -->
@@ -261,6 +242,5 @@
         }
     });
 </script>
-<script src="/js/responsive-tables.js"></script>
 </body>
 </html>
