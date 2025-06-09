@@ -1,4 +1,4 @@
-// routes/visitors.js - обновленная версия с поддержкой штрихкодов
+// routes/visitors.js - исправленная версия с рабочим endpoint для активных событий
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
@@ -92,6 +92,47 @@ const visitorValidation = [
         .matches(/^[A-Z0-9-_]+$/)
         .withMessage('Штрихкод может содержать только заглавные буквы, цифры, дефисы и подчеркивания')
 ];
+
+// ИСПРАВЛЕНО: Получить список активных событий для выбора
+router.get('/events/active', requireAuth, async (req, res) => {
+    try {
+        console.log('🎯 Запрос активных событий через /api/visitors/events/active');
+
+        const result = await query(`
+            SELECT id, name, description, start_date, end_date, location, status
+            FROM events
+            WHERE status = 'active' AND end_date >= CURRENT_DATE
+            ORDER BY start_date ASC
+        `);
+
+        console.log(`📊 Найдено активных событий: ${result.rows.length}`);
+
+        const events = result.rows.map(event => ({
+            id: event.id,
+            name: event.name,
+            description: event.description,
+            start_date: event.start_date,
+            end_date: event.end_date,
+            location: event.location,
+            status: event.status
+        }));
+
+        res.json({
+            success: true,
+            events: events,
+            count: events.length,
+            message: 'Активные события получены успешно'
+        });
+
+    } catch (err) {
+        console.error('❌ Ошибка получения активных событий:', err);
+        res.status(500).json({
+            success: false,
+            error: 'Ошибка сервера при получении активных событий',
+            details: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
+    }
+});
 
 // Получить всех посетителей с информацией о событиях и штрихкодах
 router.get('/', requireAuth, async (req, res) => {
@@ -422,36 +463,6 @@ router.get('/barcode/:barcode', requireAuth, async (req, res) => {
 
     } catch (err) {
         console.error('Ошибка получения посетителя по штрихкоду:', err);
-        res.status(500).json({ error: 'Ошибка сервера' });
-    }
-});
-
-// Остальные роуты без изменений...
-// (продолжение с оставшимися роутами)
-
-// Получить список активных событий для выбора
-router.get('/events/active', requireAuth, async (req, res) => {
-    try {
-        const result = await query(`
-            SELECT id, name, description, start_date, end_date, location
-            FROM events
-            WHERE status = 'active' AND end_date >= CURRENT_DATE
-            ORDER BY start_date ASC
-        `);
-
-        res.json({
-            events: result.rows.map(event => ({
-                id: event.id,
-                name: event.name,
-                description: event.description,
-                start_date: event.start_date,
-                end_date: event.end_date,
-                location: event.location
-            }))
-        });
-
-    } catch (err) {
-        console.error('Ошибка получения активных событий:', err);
         res.status(500).json({ error: 'Ошибка сервера' });
     }
 });

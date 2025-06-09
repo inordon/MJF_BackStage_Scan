@@ -1,1582 +1,348 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Система управления посетителями</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👥</text></svg>">
+// Исправленная версия кода обработки событий для public/index.html
+// Замените соответствующую часть в файле public/index.html
 
-    <!-- Подключаем внешние библиотеки -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
-    <script src="https://unpkg.com/qr-scanner@1.4.2/qr-scanner.umd.min.js"></script>
+// События
+events: {
+// ИСПРАВЛЕНО: Загрузка активных событий для фильтра на вкладке "Посетители"
+async loadActiveForFilters() {
+try {
+console.log('🔄 Загрузка активных событий для фильтра...');
 
-    <link rel="stylesheet" href="/css/styles.css">
-</head>
-<body>
-<div class="container">
-    <div class="header">
-        <h1>👥 Система управления посетителями</h1>
-        <div class="user-info">
-            <div class="user-badge" id="user-badge">Загрузка...</div>
-            <button class="logout-btn" onclick="app.logout()">🚪 Выйти</button>
-        </div>
-    </div>
+// Проверяем, что элемент существует ДО запроса
+const filter = document.getElementById('event-filter');
+if (!filter) {
+console.error('❌ Элемент event-filter не найден в DOM перед запросом');
+return;
+}
 
-    <div class="tab-container">
-        <button class="tab active" data-tab="visitors">📋 Посетители</button>
-        <button class="tab" data-tab="add-visitor">➕ Добавить</button>
-        <button class="tab" data-tab="events">🎯 События</button>
-        <button class="tab" data-tab="scanner">📱 Сканер</button>
-        <button class="tab" data-tab="stats">📊 Статистика</button>
-        <button class="tab" data-tab="admin" disabled>⚙️ Администрирование</button>
-    </div>
+// Показываем состояние загрузки
+filter.innerHTML = '<option value="">🔄 Загрузка событий...</option>';
 
-    <!-- Посетители -->
-    <div id="visitors" class="content active">
-        <div class="filters-section">
-            <input type="text" id="search-input" placeholder="Поиск по ФИО, событию, штрихкоду...">
-            <select id="status-filter">
-                <option value="">Все статусы</option>
-                <option value="active">Активные</option>
-                <option value="blocked">Заблокированные</option>
-            </select>
-            <select id="event-filter">
-                <option value="">🔄 Загрузка событий...</option>
-            </select>
-            <button onclick="app.visitors.filter()">🔍 Найти</button>
-            <button onclick="app.visitors.resetFilters()">🔄 Сброс</button>
-            <button onclick="app.events.loadActiveForFilters()" title="Обновить список событий">🔄 События</button>
-            <button onclick="app.visitors.testEventsAPI()" title="Тест API событий">🧪 Тест API</button>
-        </div>
+console.log('📡 Отправка запроса к API...');
 
-        <div class="table-container">
-            <div class="table-header">
-                <span>Список посетителей</span>
-                <span id="visitors-count">0</span>
-            </div>
-            <div id="visitors-table">
-                <div class="empty">Загрузка...</div>
-            </div>
-        </div>
+let data;
+let success = false;
 
-        <div id="visitors-pagination" class="pagination hidden"></div>
-    </div>
+// ИСПРАВЛЕНО: Пробуем разные endpoints в правильном порядке
+// 1. Сначала пробуем основной API событий
+try {
+console.log('🎯 Попытка #1: /api/events');
+const eventsRes = await fetch('/api/events?active_only=true');
+if (eventsRes.ok) {
+data = await eventsRes.json();
+console.log('📊 Успешный ответ от /api/events:', data);
+success = true;
+} else {
+console.log(`❌ /api/events недоступен: ${eventsRes.status}`);
+}
+} catch (eventsError) {
+console.log('❌ /api/events failed:', eventsError.message);
+}
 
-    <!-- Добавить посетителя -->
-    <div id="add-visitor" class="content">
-        <form id="visitor-form" enctype="multipart/form-data">
-            <select name="eventId" required>
-                <option value="">🔄 Загрузка событий...</option>
-            </select>
-            <input name="lastName" placeholder="Фамилия" required>
-            <input name="firstName" placeholder="Имя" required>
-            <input name="middleName" placeholder="Отчество">
-            <input name="barcode" placeholder="Штрихкод (необязательно - будет сгенерирован автоматически)">
-            <textarea name="comment" placeholder="Комментарий"></textarea>
-            <input type="file" name="photo" accept="image/*">
-            <button type="submit">Создать посетителя</button>
-        </form>
-        <div id="qr-result" class="hidden"></div>
-    </div>
+// 2. Если основной API не работает, пробуем альтернативный
+if (!success) {
+try {
+console.log('🎯 Попытка #2: /api/visitors/events/active');
+const visitorsRes = await fetch('/api/visitors/events/active');
+if (visitorsRes.ok) {
+data = await visitorsRes.json();
+console.log('📊 Успешный ответ от /api/visitors/events/active:', data);
+success = true;
+} else {
+console.log(`❌ /api/visitors/events/active недоступен: ${visitorsRes.status}`);
+}
+} catch (visitorsError) {
+console.log('❌ /api/visitors/events/active failed:', visitorsError.message);
+}
+}
 
-    <!-- События -->
-    <div id="events" class="content">
-        <button onclick="app.events.showCreateForm()">➕ Создать событие</button>
-        <div id="events-list"></div>
-    </div>
+if (!success) {
+throw new Error('Не удалось загрузить события ни из одного источника');
+}
 
-    <!-- Сканер -->
-    <div id="scanner" class="content">
-        <video id="qr-video" class="hidden"></video>
-        <button id="scanner-btn" onclick="app.scanner.toggle()">📹 Запустить сканер</button>
-        <div id="scan-result" class="hidden"></div>
-    </div>
+// Проверяем элемент ПОСЛЕ запроса
+const filterAfter = document.getElementById('event-filter');
+if (!filterAfter) {
+console.error('❌ Элемент event-filter исчез из DOM после запроса');
+return;
+}
 
-    <!-- Статистика -->
-    <div id="stats" class="content">
-        <div id="stats-overview" class="stats-grid"></div>
-        <div id="stats-tables"></div>
-    </div>
+console.log('🧹 Очистка фильтра...');
+filterAfter.innerHTML = '<option value="">Все события</option>';
 
-    <!-- Администрирование -->
-    <div id="admin" class="content">
-        <button onclick="app.admin.showCreateUserForm()">➕ Создать пользователя</button>
-        <div id="users-table">
-            <div class="loading">Загрузка...</div>
-        </div>
-        <div id="users-pagination" class="pagination hidden"></div>
-    </div>
+// ИСПРАВЛЕНО: Обрабатываем полученные данные из разных источников
+let events = [];
+
+if (data.events && Array.isArray(data.events)) {
+// Фильтруем только активные события
+events = data.events.filter(event =>
+event.status === 'active' &&
+new Date(event.end_date) >= new Date()
+);
+} else if (data.success && data.events && Array.isArray(data.events)) {
+// Альтернативный формат ответа от /api/visitors/events/active
+events = data.events;
+} else {
+console.log('⚠️ Неожиданный формат данных:', data);
+}
+
+console.log('📋 Обработанные события:', events);
+
+if (events.length > 0) {
+console.log('✅ Добавление событий в фильтр...');
+events.forEach((event, index) => {
+console.log(`  📌 Событие ${index + 1}:`, {
+id: event.id,
+name: event.name,
+status: event.status,
+end_date: event.end_date
+});
+
+const option = document.createElement('option');
+option.value = event.id;
+option.textContent = `${event.name}${event.location ? ` (${event.location})` : ''}`;
+filterAfter.appendChild(option);
+});
+console.log(`✅ Успешно добавлено ${events.length} событий в фильтр`);
+} else {
+console.log('ℹ️ Нет активных событий');
+const option = document.createElement('option');
+option.value = '';
+option.textContent = 'Нет активных событий';
+option.disabled = true;
+filterAfter.appendChild(option);
+}
+
+console.log('✅ Загрузка событий для фильтра завершена');
+} catch (err) {
+console.error('❌ Ошибка загрузки активных событий для фильтра:', err);
+
+const filter = document.getElementById('event-filter');
+if (filter) {
+filter.innerHTML = '<option value="">Все события</option><option value="" disabled>Ошибка загрузки</option>';
+}
+
+app.showAlert('error', 'Ошибка загрузки событий для фильтра: ' + err.message);
+}
+},
+
+// ИСПРАВЛЕНО: Загрузка активных событий для формы добавления посетителя
+async loadActiveForForm() {
+try {
+console.log('🔄 Загрузка активных событий для формы...');
+
+const select = document.querySelector('#visitor-form select[name="eventId"]');
+if (!select) {
+console.error('Элемент select[name="eventId"] не найден в форме');
+return;
+}
+
+// Показываем состояние загрузки
+select.innerHTML = '<option value="">🔄 Загрузка событий...</option>';
+
+let data;
+let success = false;
+
+// Пробуем разные endpoints
+try {
+console.log('🎯 Попытка загрузки для формы: /api/events');
+const eventsRes = await fetch('/api/events?active_only=true');
+if (eventsRes.ok) {
+data = await eventsRes.json();
+success = true;
+} else {
+console.log(`❌ /api/events недоступен для формы: ${eventsRes.status}`);
+}
+} catch (eventsError) {
+console.log('❌ /api/events failed для формы:', eventsError.message);
+}
+
+if (!success) {
+try {
+console.log('🎯 Попытка загрузки для формы: /api/visitors/events/active');
+const visitorsRes = await fetch('/api/visitors/events/active');
+if (visitorsRes.ok) {
+data = await visitorsRes.json();
+success = true;
+} else {
+console.log(`❌ /api/visitors/events/active недоступен для формы: ${visitorsRes.status}`);
+}
+} catch (visitorsError) {
+console.log('❌ /api/visitors/events/active failed для формы:', visitorsError.message);
+}
+}
+
+if (!success) {
+throw new Error('Не удалось загрузить события для формы');
+}
+
+select.innerHTML = '<option value="">Выберите событие</option>';
+
+// Обрабатываем события из разных источников
+let events = [];
+if (data.events && Array.isArray(data.events)) {
+events = data.events.filter(event =>
+event.status === 'active' &&
+new Date(event.end_date) >= new Date()
+);
+} else if (data.success && data.events && Array.isArray(data.events)) {
+events = data.events;
+}
+
+if (events.length > 0) {
+events.forEach(event => {
+const option = document.createElement('option');
+option.value = event.id;
+option.textContent = `${event.name} (${this.formatDate(event.start_date)})`;
+select.appendChild(option);
+});
+console.log(`✅ Добавлено ${events.length} событий в форму`);
+} else {
+const option = document.createElement('option');
+option.value = '';
+option.textContent = 'Нет активных событий';
+option.disabled = true;
+select.appendChild(option);
+console.log('ℹ️ Нет активных событий для формы');
+}
+
+console.log('✅ Форма событий обновлена успешно');
+} catch (err) {
+console.error('❌ Ошибка загрузки активных событий для формы:', err);
+
+const select = document.querySelector('#visitor-form select[name="eventId"]');
+if (select) {
+select.innerHTML = '<option value="">Выберите событие</option><option value="" disabled>Ошибка загрузки</option>';
+}
+
+app.showAlert('error', 'Ошибка загрузки событий для формы: ' + err.message);
+}
+},
+
+// Остальные методы остаются без изменений...
+async load() {
+try {
+console.log('Загрузка всех событий...');
+const res = await fetch('/api/events');
+
+if (!res.ok) {
+// Если API недоступен, попробуем создать тестовые события
+console.log('API событий недоступен, проверяем возможность создания тестовых событий...');
+await this.createTestEventsIfNeeded();
+
+const errorData = await res.json().catch(() => ({ error: 'API событий недоступен' }));
+throw new Error(errorData.error || `HTTP ${res.status}`);
+}
+
+const data = await res.json();
+console.log('События загружены:', data);
+
+// Если событий нет, предлагаем создать тестовые
+if (!data.events || data.events.length === 0) {
+console.log('События не найдены, создаем тестовые...');
+await this.createTestEventsIfNeeded();
+
+// Пробуем загрузить снова
+const retryRes = await fetch('/api/events');
+if (retryRes.ok) {
+const retryData = await retryRes.json();
+app.state.events = retryData.events || [];
+} else {
+app.state.events = [];
+}
+} else {
+app.state.events = data.events || [];
+}
+
+this.render();
+} catch (err) {
+console.error('Ошибка загрузки событий:', err);
+app.showAlert('error', 'Ошибка загрузки событий: ' + err.message);
+
+const container = document.getElementById('events-list');
+if (container) {
+container.innerHTML = `
+<div class="empty" style="color: #dc3545;">
+    <h3>❌ Ошибка загрузки событий</h3>
+    <p>${err.message}</p>
+    <button onclick="app.events.load()" style="margin-top: 10px;">🔄 Попробовать снова</button>
+    <button onclick="app.events.createTestEventsIfNeeded()" style="margin-top: 10px;">➕ Создать тестовые события</button>
 </div>
-
-<script>
-    // Основной объект приложения
-    const app = {
-        state: {
-            currentUser: null,
-            visitors: [],
-            events: [],
-            users: [],
-            pagination: {
-                visitors: { page: 1, size: 25, total: 0 },
-                users: { page: 1, size: 25, total: 0 }
-            }
-        },
-
-        // Инициализация
-        async init() {
-            console.log('🚀 Инициализация приложения...');
-
-            this.setupEventListeners();
-
-            if (await this.auth.check()) {
-                try {
-                    // Сначала загружаем события для фильтров
-                    console.log('📋 Шаг 1: Загрузка событий для фильтров...');
-                    await this.events.loadActiveForFilters();
-
-                    // Затем загружаем посетителей
-                    console.log('👥 Шаг 2: Загрузка посетителей...');
-                    await this.visitors.load();
-
-                    // И статистику
-                    console.log('📊 Шаг 3: Загрузка статистики...');
-                    await this.stats.load();
-
-                    console.log('✅ Инициализация завершена успешно');
-                } catch (err) {
-                    console.error('❌ Ошибка инициализации:', err);
-                    app.showAlert('error', 'Ошибка инициализации: ' + err.message);
-                }
-            }
-        },
-
-        // Обработчики событий
-        setupEventListeners() {
-            // Переключение вкладок
-            document.querySelectorAll('.tab').forEach(tab => {
-                tab.onclick = () => this.showTab(tab.dataset.tab);
-            });
-
-            // Поиск посетителей
-            document.getElementById('search-input').oninput =
-                this.debounce(() => this.visitors.load(1), 500);
-
-            // Фильтры
-            document.getElementById('status-filter').onchange = () => this.visitors.load(1);
-            document.getElementById('event-filter').onchange = () => this.visitors.load(1);
-
-            // Форма посетителя
-            document.getElementById('visitor-form').onsubmit = (e) => this.visitors.create(e);
-        },
-
-        // Переключение вкладок
-        showTab(tab) {
-            document.querySelectorAll('.content').forEach(c => c.classList.remove('active'));
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-
-            document.getElementById(tab).classList.add('active');
-            document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
-
-            // Загрузка данных для вкладки
-            const loaders = {
-                visitors: async () => {
-                    console.log('Переход на вкладку посетителей - обновляем фильтр событий');
-                    try {
-                        await this.events.loadActiveForFilters();
-                        this.visitors.load();
-                    } catch (err) {
-                        console.error('Ошибка загрузки данных для вкладки посетителей:', err);
-                    }
-                },
-                'add-visitor': () => this.events.loadActiveForForm(),
-                events: () => this.events.load(),
-                stats: () => this.stats.load(),
-                admin: () => this.admin.load()
-            };
-
-            if (loaders[tab]) {
-                try {
-                    loaders[tab]();
-                } catch (err) {
-                    console.error(`Ошибка загрузки данных для вкладки ${tab}:`, err);
-                }
-            }
-        },
-
-        // Выход из системы
-        async logout() {
-            try {
-                const res = await fetch('/api/auth/logout', { method: 'POST' });
-
-                if (res.ok) {
-                    window.location.href = '/login';
-                } else {
-                    this.showAlert('error', 'Ошибка выхода из системы');
-                }
-            } catch (err) {
-                console.error('Ошибка выхода:', err);
-                // Даже если запрос не удался, перенаправляем на login
-                window.location.href = '/login';
-            }
-        },
-
-        // Авторизация
-        auth: {
-            async check() {
-                try {
-                    const res = await fetch('/api/auth/check');
-                    const data = await res.json();
-
-                    if (!data.authenticated) {
-                        window.location.href = '/login';
-                        return false;
-                    }
-
-                    app.state.currentUser = data.user;
-                    app.updateUserInterface();
-                    return true;
-                } catch (err) {
-                    window.location.href = '/login';
-                    return false;
-                }
-            }
-        },
-
-        // Посетители
-        visitors: {
-            async load(page = 1) {
-                const container = document.getElementById('visitors-table');
-
-                try {
-                    // Показываем индикацию загрузки
-                    container.innerHTML = '<div class="loading">Загрузка посетителей...</div>';
-
-                    const params = new URLSearchParams({
-                        page,
-                        limit: app.state.pagination.visitors.size,
-                        search: document.getElementById('search-input').value,
-                        status: document.getElementById('status-filter').value,
-                        event_id: document.getElementById('event-filter').value
-                    });
-
-                    const res = await fetch(`/api/visitors?${params}`);
-
-                    if (!res.ok) {
-                        const errorData = await res.json().catch(() => ({ error: 'Ошибка сервера' }));
-                        throw new Error(errorData.error || `HTTP ${res.status}`);
-                    }
-
-                    const data = await res.json();
-
-                    app.state.visitors = data.visitors || [];
-                    app.state.pagination.visitors = data.pagination || { page: 1, size: 25, total: 0, pages: 1 };
-
-                    this.render();
-                } catch (err) {
-                    console.error('Ошибка загрузки посетителей:', err);
-                    container.innerHTML = `
-                        <div class="empty" style="color: #dc3545;">
-                            <h3>❌ Ошибка загрузки посетителей</h3>
-                            <p>${err.message}</p>
-                            <button onclick="app.visitors.load()" style="margin-top: 10px;">🔄 Попробовать снова</button>
-                        </div>
-                    `;
-                    app.showAlert('error', 'Ошибка загрузки посетителей: ' + err.message);
-                }
-            },
-
-            render() {
-                const container = document.getElementById('visitors-table');
-                const visitors = app.state.visitors;
-
-                // Обновляем счетчик посетителей
-                const countElement = document.getElementById('visitors-count');
-                if (countElement) {
-                    countElement.textContent = visitors ? visitors.length : 0;
-                }
-
-                if (!visitors || visitors.length === 0) {
-                    container.innerHTML = `
-                        <div class="empty">
-                            <h3>👥 Посетители не найдены</h3>
-                            <p>Попробуйте изменить параметры поиска или создайте первого посетителя</p>
-                            <button onclick="app.showTab('add-visitor')" style="margin-top: 15px;">➕ Добавить посетителя</button>
-                        </div>
-                    `;
-
-                    // Скрываем пагинацию
-                    const pagination = document.getElementById('visitors-pagination');
-                    if (pagination) pagination.classList.add('hidden');
-                    return;
-                }
-
-                container.innerHTML = `
-                <table>
-                    <thead>
-                        <tr>
-                            <th>ФИО</th>
-                            <th>Штрихкод</th>
-                            <th>Событие</th>
-                            <th>Статус</th>
-                            <th>Сканирований</th>
-                            <th>Действия</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${visitors.map(v => `
-                            <tr>
-                                <td>
-                                    <strong>${v.last_name} ${v.first_name} ${v.middle_name || ''}</strong>
-                                    ${v.comment ? `<br><small>${v.comment}</small>` : ''}
-                                </td>
-                                <td><code style="background: #f8f9fa; padding: 2px 6px; border-radius: 4px; font-size: 12px;">${v.barcode || 'Нет'}</code></td>
-                                <td><span class="badge">${v.event?.name || 'Без события'}</span></td>
-                                <td><span class="status-${v.status}">${v.status === 'active' ? 'Активен' : 'Заблокирован'}</span></td>
-                                <td>${v.total_scans} ${v.first_scan_today ? '(сегодня)' : ''}</td>
-                                <td>
-                                    <button onclick="app.visitors.downloadQR(${v.id})" title="Скачать QR">📥</button>
-                                    <button onclick="app.visitors.toggleStatus(${v.id}, '${v.status}')" title="${v.status === 'active' ? 'Заблокировать' : 'Разблокировать'}">${v.status === 'active' ? '🔒' : '🔓'}</button>
-                                    ${app.state.currentUser.role === 'admin' ? `<button onclick="app.visitors.delete(${v.id})" title="Удалить">🗑️</button>` : ''}
-                                </td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
-
-                // Показываем пагинацию
-                app.renderPagination('visitors');
-            },
-
-            async create(e) {
-                e.preventDefault();
-                const formData = new FormData(e.target);
-
-                try {
-                    const res = await fetch('/api/visitors', { method: 'POST', body: formData });
-                    const data = await res.json();
-
-                    if (res.ok) {
-                        app.showAlert('success', 'Посетитель создан');
-                        this.showQRResult(data.visitor);
-                    } else {
-                        app.showAlert('error', data.error);
-                    }
-                } catch (err) {
-                    app.showAlert('error', 'Ошибка создания посетителя');
-                }
-            },
-
-            showQRResult(visitor) {
-                const qrData = visitor.barcode; // Теперь QR содержит штрихкод
-                const container = document.getElementById('qr-result');
-
-                container.innerHTML = `
-                <div class="qr-container">
-                    <canvas id="qr-canvas"></canvas>
-                    <p>QR-код для ${visitor.last_name} ${visitor.first_name}</p>
-                    <p><strong>Штрихкод:</strong> <code>${visitor.barcode}</code></p>
-                    <button onclick="app.visitors.downloadQRCanvas()">📥 Скачать</button>
-                    <button onclick="app.visitors.resetForm()">➕ Добавить еще</button>
-                </div>
-            `;
-                container.classList.remove('hidden');
-
-                // Генерируем QR код
-                if (typeof QRCode !== 'undefined') {
-                    QRCode.toCanvas(document.getElementById('qr-canvas'), qrData);
-                }
-            },
-
-            async downloadQR(id) {
-                try {
-                    const res = await fetch(`/api/visitors/${id}/qr`);
-                    const blob = await res.blob();
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `visitor-qr-${id}.png`;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                } catch (err) {
-                    app.showAlert('error', 'Ошибка скачивания QR');
-                }
-            },
-
-            downloadQRCanvas() {
-                const canvas = document.getElementById('qr-canvas');
-                if (canvas) {
-                    const link = document.createElement('a');
-                    link.download = 'visitor-qr-code.png';
-                    link.href = canvas.toDataURL();
-                    link.click();
-                }
-            },
-
-            async toggleStatus(id, currentStatus) {
-                const newStatus = currentStatus === 'active' ? 'blocked' : 'active';
-                const action = newStatus === 'active' ? 'разблокировать' : 'заблокировать';
-
-                if (!confirm(`${action} посетителя?`)) return;
-
-                try {
-                    const res = await fetch(`/api/visitors/${id}/status`, {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ status: newStatus })
-                    });
-
-                    if (res.ok) {
-                        app.showAlert('success', 'Статус изменен');
-                        this.load();
-                    } else {
-                        app.showAlert('error', 'Ошибка изменения статуса');
-                    }
-                } catch (err) {
-                    app.showAlert('error', 'Ошибка сервера');
-                }
-            },
-
-            async delete(id) {
-                if (!confirm('Удалить посетителя?')) return;
-
-                try {
-                    const res = await fetch(`/api/visitors/${id}`, { method: 'DELETE' });
-                    if (res.ok) {
-                        app.showAlert('success', 'Посетитель удален');
-                        this.load();
-                    } else {
-                        app.showAlert('error', 'Ошибка удаления');
-                    }
-                } catch (err) {
-                    app.showAlert('error', 'Ошибка сервера');
-                }
-            },
-
-            filter() {
-                this.load(1);
-            },
-
-            resetFilters() {
-                document.getElementById('search-input').value = '';
-                document.getElementById('status-filter').value = '';
-                document.getElementById('event-filter').value = '';
-                this.load(1);
-            },
-
-            resetForm() {
-                document.getElementById('visitor-form').reset();
-                document.getElementById('qr-result').classList.add('hidden');
-            },
-
-            // Функция для тестирования API событий
-            testEventsAPI() {
-                console.log('🧪 Тестирование API событий...');
-
-                // Тест 1: Проверяем основной endpoint событий
-                console.log('📡 Тест 1: /api/events');
-                fetch('/api/events')
-                    .then(response => {
-                        console.log('📊 Статус ответа /api/events:', response.status, response.statusText);
-                        return response.json();
-                    })
-                    .then(data => {
-                        console.log('📊 Ответ /api/events:', data);
-                        if (data.events) {
-                            console.log(`📊 Всего событий: ${data.events.length}`);
-                            const activeEvents = data.events.filter(e => e.status === 'active');
-                            console.log(`📊 Активных событий: ${activeEvents.length}`);
-
-                            activeEvents.forEach((event, i) => {
-                                console.log(`  ${i + 1}. ${event.name} (ID: ${event.id}, до: ${event.end_date})`);
-                            });
-                        } else {
-                            console.log('⚠️ Нет поля events в ответе /api/events');
-                        }
-                    })
-                    .catch(err => console.error('❌ Ошибка /api/events:', err));
-
-                // Тест 2: Проверяем альтернативный endpoint
-                console.log('📡 Тест 2: /api/visitors/events/active');
-                fetch('/api/visitors/events/active')
-                    .then(response => {
-                        console.log('📊 Статус ответа /api/visitors/events/active:', response.status, response.statusText);
-                        return response.text();
-                    })
-                    .then(text => {
-                        console.log('📊 Сырой ответ /api/visitors/events/active:', text);
-                        try {
-                            const data = JSON.parse(text);
-                            console.log('📊 Парсинг JSON успешен:', data);
-                        } catch (e) {
-                            console.error('❌ Ошибка парсинга JSON:', e);
-                        }
-                    })
-                    .catch(err => console.error('❌ Ошибка /api/visitors/events/active:', err));
-
-                // Тест 3: Проверяем состояние фильтра
-                console.log('📡 Тест 3: Состояние DOM');
-                const filter = document.getElementById('event-filter');
-                if (filter) {
-                    console.log('📊 Фильтр найден, опций:', filter.options.length);
-                    for (let i = 0; i < filter.options.length; i++) {
-                        console.log(`  ${i}: "${filter.options[i].text}" (value: "${filter.options[i].value}")`);
-                    }
-                } else {
-                    console.error('❌ Фильтр не найден в DOM');
-                }
-
-                // Тест 4: Проверяем форму
-                const formSelect = document.querySelector('#visitor-form select[name="eventId"]');
-                if (formSelect) {
-                    console.log('📊 Форма найдена, опций:', formSelect.options.length);
-                    for (let i = 0; i < formSelect.options.length; i++) {
-                        console.log(`  Форма ${i}: "${formSelect.options[i].text}" (value: "${formSelect.options[i].value}")`);
-                    }
-                } else {
-                    console.error('❌ Форма не найдена в DOM');
-                }
-
-                app.showAlert('info', 'Тест API запущен, смотрите консоль для результатов');
-            }
-        },
-
-        // События
-        events: {
-            // Загрузка активных событий для фильтра на вкладке "Посетители"
-            async loadActiveForFilters() {
-                try {
-                    console.log('🔄 Загрузка активных событий для фильтра...');
-
-                    // Проверяем, что элемент существует ДО запроса
-                    const filter = document.getElementById('event-filter');
-                    if (!filter) {
-                        console.error('❌ Элемент event-filter не найден в DOM перед запросом');
-                        return;
-                    }
-
-                    // Показываем состояние загрузки
-                    filter.innerHTML = '<option value="">🔄 Загрузка событий...</option>';
-
-                    console.log('📡 Отправка запроса к API...');
-
-                    // ИСПРАВЛЕНО: Пробуем разные endpoints
-                    let res, data;
-
-                    // Сначала пробуем основной endpoint событий
-                    try {
-                        res = await fetch('/api/events');
-                        if (res.ok) {
-                            data = await res.json();
-                            console.log('📊 Успешный ответ от /api/events:', data);
-                        } else {
-                            throw new Error(`HTTP ${res.status}`);
-                        }
-                    } catch (eventsError) {
-                        console.log('❌ /api/events недоступен, пробуем альтернативный endpoint');
-
-                        // Пробуем альтернативный endpoint для посетителей
-                        try {
-                            res = await fetch('/api/visitors/events/active');
-                            if (res.ok) {
-                                data = await res.json();
-                                console.log('📊 Успешный ответ от /api/visitors/events/active:', data);
-                            } else {
-                                throw new Error(`HTTP ${res.status}`);
-                            }
-                        } catch (visitorsError) {
-                            console.error('❌ Оба endpoint недоступны');
-                            throw new Error('Не удалось загрузить события');
-                        }
-                    }
-
-                    // Проверяем элемент ПОСЛЕ запроса
-                    const filterAfter = document.getElementById('event-filter');
-                    if (!filterAfter) {
-                        console.error('❌ Элемент event-filter исчез из DOM после запроса');
-                        return;
-                    }
-
-                    console.log('🧹 Очистка фильтра...');
-                    filterAfter.innerHTML = '<option value="">Все события</option>';
-
-                    // Обрабатываем полученные данные
-                    let events = [];
-
-                    if (data.events && Array.isArray(data.events)) {
-                        // Фильтруем только активные события
-                        events = data.events.filter(event =>
-                            event.status === 'active' &&
-                            new Date(event.end_date) >= new Date()
-                        );
-                    }
-
-                    console.log('📋 Обработанные события:', events);
-
-                    if (events.length > 0) {
-                        console.log('✅ Добавление событий в фильтр...');
-                        events.forEach((event, index) => {
-                            console.log(`  📌 Событие ${index + 1}:`, {
-                                id: event.id,
-                                name: event.name,
-                                status: event.status,
-                                end_date: event.end_date
-                            });
-
-                            const option = document.createElement('option');
-                            option.value = event.id;
-                            option.textContent = `${event.name} (${event.location || 'Без места'})`;
-                            filterAfter.appendChild(option);
-                        });
-                        console.log(`✅ Успешно добавлено ${events.length} событий в фильтр`);
-                    } else {
-                        console.log('ℹ️ Нет активных событий');
-                        const option = document.createElement('option');
-                        option.value = '';
-                        option.textContent = 'Нет активных событий';
-                        option.disabled = true;
-                        filterAfter.appendChild(option);
-                    }
-
-                    console.log('✅ Загрузка событий для фильтра завершена');
-                } catch (err) {
-                    console.error('❌ Ошибка загрузки активных событий для фильтра:', err);
-
-                    const filter = document.getElementById('event-filter');
-                    if (filter) {
-                        filter.innerHTML = '<option value="">Все события</option><option value="" disabled>Ошибка загрузки</option>';
-                    }
-
-                    app.showAlert('error', 'Ошибка загрузки событий для фильтра: ' + err.message);
-                }
-            },
-
-            // Загрузка активных событий для формы добавления посетителя
-            async loadActiveForForm() {
-                try {
-                    console.log('Загрузка активных событий для формы...');
-
-                    const select = document.querySelector('#visitor-form select[name="eventId"]');
-                    if (!select) {
-                        console.error('Элемент select[name="eventId"] не найден в форме');
-                        return;
-                    }
-
-                    // Показываем состояние загрузки
-                    select.innerHTML = '<option value="">🔄 Загрузка событий...</option>';
-
-                    // Пробуем разные endpoints
-                    let res, data;
-
-                    try {
-                        res = await fetch('/api/events');
-                        if (res.ok) {
-                            data = await res.json();
-                        } else {
-                            throw new Error(`HTTP ${res.status}`);
-                        }
-                    } catch (eventsError) {
-                        console.log('Пробуем альтернативный endpoint для формы');
-                        res = await fetch('/api/visitors/events/active');
-                        if (!res.ok) {
-                            throw new Error('Не удалось загрузить события для формы');
-                        }
-                        data = await res.json();
-                    }
-
-                    select.innerHTML = '<option value="">Выберите событие</option>';
-
-                    // Обрабатываем события
-                    let events = [];
-                    if (data.events && Array.isArray(data.events)) {
-                        events = data.events.filter(event =>
-                            event.status === 'active' &&
-                            new Date(event.end_date) >= new Date()
-                        );
-                    }
-
-                    if (events.length > 0) {
-                        events.forEach(event => {
-                            const option = document.createElement('option');
-                            option.value = event.id;
-                            option.textContent = `${event.name} (${this.formatDate(event.start_date)})`;
-                            select.appendChild(option);
-                        });
-                        console.log(`✅ Добавлено ${events.length} событий в форму`);
-                    } else {
-                        const option = document.createElement('option');
-                        option.value = '';
-                        option.textContent = 'Нет активных событий';
-                        option.disabled = true;
-                        select.appendChild(option);
-                        console.log('ℹ️ Нет активных событий для формы');
-                    }
-
-                    console.log('Форма событий обновлена успешно');
-                } catch (err) {
-                    console.error('Ошибка загрузки активных событий для формы:', err);
-
-                    const select = document.querySelector('#visitor-form select[name="eventId"]');
-                    if (select) {
-                        select.innerHTML = '<option value="">Выберите событие</option><option value="" disabled>Ошибка загрузки</option>';
-                    }
-
-                    app.showAlert('error', 'Ошибка загрузки событий для формы: ' + err.message);
-                }
-            },
-
-            async load() {
-                try {
-                    console.log('Загрузка всех событий...');
-                    const res = await fetch('/api/events');
-
-                    if (!res.ok) {
-                        // Если API недоступен, попробуем создать тестовые события
-                        console.log('API событий недоступен, проверяем возможность создания тестовых событий...');
-                        await this.createTestEventsIfNeeded();
-
-                        const errorData = await res.json().catch(() => ({ error: 'API событий недоступен' }));
-                        throw new Error(errorData.error || `HTTP ${res.status}`);
-                    }
-
-                    const data = await res.json();
-                    console.log('События загружены:', data);
-
-                    // Если событий нет, предлагаем создать тестовые
-                    if (!data.events || data.events.length === 0) {
-                        console.log('События не найдены, создаем тестовые...');
-                        await this.createTestEventsIfNeeded();
-
-                        // Пробуем загрузить снова
-                        const retryRes = await fetch('/api/events');
-                        if (retryRes.ok) {
-                            const retryData = await retryRes.json();
-                            app.state.events = retryData.events || [];
-                        } else {
-                            app.state.events = [];
-                        }
-                    } else {
-                        app.state.events = data.events || [];
-                    }
-
-                    this.render();
-                } catch (err) {
-                    console.error('Ошибка загрузки событий:', err);
-                    app.showAlert('error', 'Ошибка загрузки событий: ' + err.message);
-
-                    const container = document.getElementById('events-list');
-                    if (container) {
-                        container.innerHTML = `
-                    <div class="empty" style="color: #dc3545;">
-                        <h3>❌ Ошибка загрузки событий</h3>
-                        <p>${err.message}</p>
-                        <button onclick="app.events.load()" style="margin-top: 10px;">🔄 Попробовать снова</button>
-                        <button onclick="app.events.createTestEventsIfNeeded()" style="margin-top: 10px;">➕ Создать тестовые события</button>
-                    </div>
-                `;
-                    }
-                }
-            },
-
-            // Создание тестовых событий если их нет
-            async createTestEventsIfNeeded() {
-                try {
-                    console.log('Попытка создания тестовых событий...');
-
-                    const testEvents = [
-                        {
-                            name: 'IT-Конференция 2024',
-                            description: 'Ежегодная конференция по информационным технологиям',
-                            start_date: '2024-12-01',
-                            end_date: '2024-12-31',
-                            location: 'Москва, ЦВК "Экспоцентр"',
-                            status: 'active'
-                        },
-                        {
-                            name: 'Выставка инноваций',
-                            description: 'Выставка новых технологий и стартапов',
-                            start_date: '2024-11-15',
-                            end_date: '2024-12-15',
-                            location: 'СПб, Ленэкспо',
-                            status: 'active'
-                        },
-                        {
-                            name: 'Семинар по безопасности',
-                            description: 'Обучающий семинар по кибербезопасности',
-                            start_date: '2024-11-01',
-                            end_date: '2024-12-01',
-                            location: 'Онлайн',
-                            status: 'active'
-                        }
-                    ];
-
-                    let createdCount = 0;
-                    for (const eventData of testEvents) {
-                        try {
-                            const res = await fetch('/api/events', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify(eventData)
-                            });
-
-                            if (res.ok) {
-                                createdCount++;
-                                console.log(`✅ Создано событие: ${eventData.name}`);
-                            } else {
-                                console.log(`⚠️ Не удалось создать событие: ${eventData.name}`);
-                            }
-                        } catch (err) {
-                            console.log(`❌ Ошибка создания события ${eventData.name}:`, err.message);
-                        }
-                    }
-
-                    if (createdCount > 0) {
-                        app.showAlert('success', `Создано ${createdCount} тестовых событий`);
-                        // Обновляем фильтры
-                        await this.loadActiveForFilters();
-                        await this.loadActiveForForm();
-                    } else {
-                        console.log('Не удалось создать тестовые события');
-                    }
-
-                } catch (err) {
-                    console.error('Ошибка создания тестовых событий:', err);
-                }
-            },
-
-            render() {
-                const container = document.getElementById('events-list');
-                if (!container) {
-                    console.error('Контейнер events-list не найден');
-                    return;
-                }
-
-                const events = app.state.events;
-
-                if (!events || events.length === 0) {
-                    container.innerHTML = `
-                <div class="empty">
-                    <h3>📋 События не найдены</h3>
-                    <p>Создайте первое событие для управления посетителями</p>
-                    <button onclick="app.events.showCreateForm()" style="margin-top: 15px;">➕ Создать событие</button>
-                    <button onclick="app.events.createTestEventsIfNeeded()" style="margin-top: 10px;">🎯 Создать тестовые события</button>
-                </div>
-            `;
-                    return;
-                }
-
-                container.innerHTML = events.map(e => `
-            <div class="event-card">
-                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
-                    <h3>${e.name}</h3>
-                    <span class="status-${e.status}" style="font-size: 12px; padding: 4px 8px;">
-                        ${this.getStatusText(e.status)}
-                    </span>
-                </div>
-
-                ${e.description ? `<p style="color: #666; margin-bottom: 10px;">${e.description}</p>` : ''}
-
-                <div style="margin-bottom: 10px;">
-                    <p><strong>📅 Даты:</strong> ${this.formatDate(e.start_date)} - ${this.formatDate(e.end_date)}</p>
-                    ${e.location ? `<p><strong>📍 Место:</strong> ${e.location}</p>` : ''}
-                    ${e.max_participants ? `<p><strong>👥 Макс. участников:</strong> ${e.max_participants}</p>` : ''}
-                </div>
-
-                <div class="stats">
-                    <span title="Всего посетителей">👥 ${e.stats?.total_visitors || 0}</span>
-                    <span title="Активных посетителей">✅ ${e.stats?.active_visitors || 0}</span>
-                    <span title="Всего сканирований">📱 ${e.stats?.total_scans || 0}</span>
-                    <span title="Сканирований сегодня">📊 ${e.stats?.today_scans || 0}</span>
-                </div>
-
-                ${app.state.currentUser.role !== 'skd' ? `
-                    <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
-                        <button onclick="app.events.viewDetails(${e.id})" style="font-size: 12px; padding: 6px 12px;">📋 Подробно</button>
-                        ${app.state.currentUser.role === 'admin' || app.state.currentUser.role === 'moderator' ? `
-                            <button onclick="app.events.showEditForm(${e.id})" style="font-size: 12px; padding: 6px 12px;">✏️ Редактировать</button>
-                            <button onclick="app.events.toggleStatus(${e.id}, '${e.status}')" style="font-size: 12px; padding: 6px 12px;">
-                                ${e.status === 'active' ? '⏸️ Деактивировать' : '▶️ Активировать'}
-                            </button>
-                        ` : ''}
-                        ${app.state.currentUser.role === 'admin' ? `
-                            <button onclick="app.events.delete(${e.id})" style="font-size: 12px; padding: 6px 12px; background: #dc3545;">🗑️ Удалить</button>
-                        ` : ''}
-                    </div>
-                ` : ''}
-            </div>
-        `).join('');
-            },
-
-            getStatusText(status) {
-                const statusMap = {
-                    'active': 'Активно',
-                    'inactive': 'Неактивно',
-                    'completed': 'Завершено',
-                    'cancelled': 'Отменено'
-                };
-                return statusMap[status] || status;
-            },
-
-            formatDate(dateString) {
-                if (!dateString) return '';
-                return new Date(dateString).toLocaleDateString('ru-RU');
-            },
-
-            showCreateForm() {
-                app.showModal(`
-            <h3>Создание события</h3>
-            <form id="event-form">
-                <input name="name" placeholder="Название события" required>
-                <textarea name="description" placeholder="Описание (необязательно)" rows="3"></textarea>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                    <div>
-                        <label>Дата начала:</label>
-                        <input name="start_date" type="date" required>
-                    </div>
-                    <div>
-                        <label>Дата окончания:</label>
-                        <input name="end_date" type="date" required>
-                    </div>
-                </div>
-                <input name="location" placeholder="Местоположение (необязательно)">
-                <input name="max_participants" type="number" placeholder="Максимум участников (необязательно)" min="1">
-                <label style="display: flex; align-items: center; gap: 10px;">
-                    <input name="registration_required" type="checkbox">
-                    Требуется регистрация
-                </label>
-                <button type="submit">Создать событие</button>
-            </form>
-        `, async (formData) => {
-                    try {
-                        const eventData = Object.fromEntries(formData);
-                        eventData.registration_required = formData.get('registration_required') === 'on';
-
-                        Object.keys(eventData).forEach(key => {
-                            if (eventData[key] === '' || eventData[key] === null) {
-                                delete eventData[key];
-                            }
-                        });
-
-                        const res = await fetch('/api/events', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(eventData)
-                        });
-
-                        const data = await res.json();
-
-                        if (res.ok) {
-                            app.showAlert('success', 'Событие создано успешно');
-                            this.load();
-                            try {
-                                await this.loadActiveForFilters();
-                                await this.loadActiveForForm();
-                            } catch (err) {
-                                console.error('Ошибка обновления фильтров после создания события:', err);
-                            }
-                        } else {
-                            throw new Error(data.error || 'Ошибка создания события');
-                        }
-                    } catch (err) {
-                        console.error('Ошибка создания события:', err);
-                        app.showAlert('error', 'Ошибка создания события: ' + err.message);
-                    }
-                });
-            },
-
-            async viewDetails(id) {
-                try {
-                    const res = await fetch(`/api/events/${id}`);
-                    const data = await res.json();
-
-                    if (!res.ok) {
-                        throw new Error(data.error || 'Ошибка загрузки события');
-                    }
-
-                    app.showModal(`
-                <h3>📋 ${data.name}</h3>
-                <div style="text-align: left;">
-                    ${data.description ? `<p><strong>Описание:</strong> ${data.description}</p>` : ''}
-                    <p><strong>📅 Период:</strong> ${this.formatDate(data.start_date)} - ${this.formatDate(data.end_date)}</p>
-                    ${data.location ? `<p><strong>📍 Место:</strong> ${data.location}</p>` : ''}
-                    <p><strong>📊 Статус:</strong> ${this.getStatusText(data.status)}</p>
-                    ${data.max_participants ? `<p><strong>👥 Макс. участников:</strong> ${data.max_participants}</p>` : ''}
-                    <p><strong>📝 Регистрация:</strong> ${data.registration_required ? 'Требуется' : 'Не требуется'}</p>
-
-                    <h4 style="margin-top: 20px;">📈 Статистика:</h4>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
-                        <div>Всего посетителей: <strong>${data.stats?.total_visitors || 0}</strong></div>
-                        <div>Активных: <strong>${data.stats?.active_visitors || 0}</strong></div>
-                        <div>Всего сканирований: <strong>${data.stats?.total_scans || 0}</strong></div>
-                        <div>Сегодня: <strong>${data.stats?.today_scans || 0}</strong></div>
-                    </div>
-
-                    ${data.created_by_name ? `<p style="margin-top: 15px; font-size: 12px; color: #666;">Создано: ${data.created_by_name}</p>` : ''}
-                </div>
-            `);
-                } catch (err) {
-                    console.error('Ошибка просмотра события:', err);
-                    app.showAlert('error', 'Ошибка загрузки данных события: ' + err.message);
-                }
-            },
-
-            async toggleStatus(id, currentStatus) {
-                const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
-                const action = newStatus === 'active' ? 'активировать' : 'деактивировать';
-
-                if (!confirm(`Вы уверены, что хотите ${action} это событие?`)) return;
-
-                try {
-                    const res = await fetch(`/api/events/${id}/status`, {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ status: newStatus })
-                    });
-
-                    const data = await res.json();
-
-                    if (res.ok) {
-                        app.showAlert('success', data.message);
-                        this.load();
-                        try {
-                            await this.loadActiveForFilters();
-                            await this.loadActiveForForm();
-                        } catch (err) {
-                            console.error('Ошибка обновления фильтров после изменения статуса:', err);
-                        }
-                    } else {
-                        throw new Error(data.error || 'Ошибка изменения статуса');
-                    }
-                } catch (err) {
-                    console.error('Ошибка изменения статуса события:', err);
-                    app.showAlert('error', 'Ошибка изменения статуса: ' + err.message);
-                }
-            },
-
-            async delete(id) {
-                if (!confirm('Вы уверены, что хотите удалить это событие? Это действие нельзя отменить.')) return;
-
-                try {
-                    const res = await fetch(`/api/events/${id}`, { method: 'DELETE' });
-                    const data = await res.json();
-
-                    if (res.ok) {
-                        app.showAlert('success', data.message);
-                        this.load();
-                        try {
-                            await this.loadActiveForFilters();
-                            await this.loadActiveForForm();
-                        } catch (err) {
-                            console.error('Ошибка обновления фильтров после удаления события:', err);
-                        }
-                    } else {
-                        throw new Error(data.error || 'Ошибка удаления события');
-                    }
-                } catch (err) {
-                    console.error('Ошибка удаления события:', err);
-                    app.showAlert('error', 'Ошибка удаления события: ' + err.message);
-                }
-            }
-        },
-
-        // Сканер
-        scanner: {
-            instance: null,
-
-            toggle() {
-                if (this.instance) {
-                    this.stop();
-                } else {
-                    this.start();
-                }
-            },
-
-            async start() {
-                if (typeof QrScanner === 'undefined') {
-                    app.showAlert('error', 'QR сканер недоступен');
-                    return;
-                }
-
-                const video = document.getElementById('qr-video');
-                const btn = document.getElementById('scanner-btn');
-
-                this.instance = new QrScanner(video, result => {
-                    this.handleResult(result.data);
-                });
-
-                try {
-                    await this.instance.start();
-                    video.classList.remove('hidden');
-                    btn.textContent = '⏹️ Остановить';
-                } catch (err) {
-                    app.showAlert('error', 'Ошибка запуска камеры');
-                }
-            },
-
-            stop() {
-                if (this.instance) {
-                    this.instance.stop();
-                    this.instance = null;
-                    document.getElementById('qr-video').classList.add('hidden');
-                    document.getElementById('scanner-btn').textContent = '📹 Запустить сканер';
-                }
-            },
-
-            async handleResult(qrData) {
-                let barcode = null;
-
-                // Если QR содержит штрихкод напрямую
-                if (qrData.match(/^VIS\d+$/)) {
-                    barcode = qrData;
-                } else if (qrData.includes('/scan/')) {
-                    // Если QR содержит URL
-                    barcode = qrData.split('/scan/')[1];
-                } else {
-                    // Попробуем найти штрихкод в строке
-                    const match = qrData.match(/VIS\d+/);
-                    if (match) {
-                        barcode = match[0];
-                    }
-                }
-
-                if (!barcode) {
-                    app.showAlert('error', 'Некорректный QR код');
-                    return;
-                }
-
-                try {
-                    const res = await fetch(`/api/scan/${barcode}`);
-                    const data = await res.json();
-
-                    this.showResult(data);
-                    this.stop();
-                } catch (err) {
-                    app.showAlert('error', 'Ошибка сканирования');
-                }
-            },
-
-            showResult(data) {
-                const container = document.getElementById('scan-result');
-
-                const statusClass = {
-                    success: 'success',
-                    warning: 'warning',
-                    error: 'error'
-                }[data.status] || 'info';
-
-                container.innerHTML = `
-                <div class="alert alert-${statusClass}">
-                    <h4>${data.icon} ${data.title}</h4>
-                    ${data.comment ? `<p><strong>Комментарий:</strong> ${data.comment}</p>` : ''}
-                    <p><strong>Время:</strong> ${new Date(data.scanTime || data.currentScanTime).toLocaleString()}</p>
-                </div>
-            `;
-                container.classList.remove('hidden');
-            }
-        },
-
-        // Статистика
-        stats: {
-            async load() {
-                try {
-                    const res = await fetch('/api/visitors/stats/overview');
-                    const data = await res.json();
-
-                    this.render(data);
-                } catch (err) {
-                    app.showAlert('error', 'Ошибка загрузки статистики');
-                }
-            },
-
-            render(data) {
-                const overview = document.getElementById('stats-overview');
-                overview.innerHTML = `
-                <div class="stat-card">
-                    <div class="stat-number">${data.visitors?.total_visitors || 0}</div>
-                    <div class="stat-label">Всего посетителей</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number">${data.visitors?.active_visitors || 0}</div>
-                    <div class="stat-label">Активных</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number">${data.scans?.today_scans || 0}</div>
-                    <div class="stat-label">Сканирований сегодня</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number">${data.scans?.week_scans || 0}</div>
-                    <div class="stat-label">За неделю</div>
-                </div>
-            `;
-            }
-        },
-
-        // Администрирование
-        admin: {
-            async load() {
-                const container = document.getElementById('users-table');
-
-                if (app.state.currentUser.role !== 'admin') {
-                    container.innerHTML = `
-                        <div class="empty">
-                            <h3>🔒 Доступ ограничен</h3>
-                            <p>Только администраторы могут просматривать эту страницу</p>
-                        </div>
-                    `;
-                    return;
-                }
-
-                try {
-                    container.innerHTML = '<div class="loading">Загрузка пользователей...</div>';
-
-                    const res = await fetch('/api/admin/users');
-                    const data = await res.json();
-
-                    if (!res.ok) {
-                        throw new Error(data.error || 'Ошибка загрузки пользователей');
-                    }
-
-                    app.state.users = data.users || [];
-                    this.render();
-                } catch (err) {
-                    console.error('Ошибка загрузки пользователей:', err);
-                    container.innerHTML = `
-                        <div class="empty" style="color: #dc3545;">
-                            <h3>❌ Ошибка загрузки</h3>
-                            <p>${err.message}</p>
-                            <button onclick="app.admin.load()" style="margin-top: 10px;">🔄 Попробовать снова</button>
-                        </div>
-                    `;
-                    app.showAlert('error', 'Ошибка загрузки пользователей: ' + err.message);
-                }
-            },
-
-            render() {
-                const container = document.getElementById('users-table');
-                const users = app.state.users;
-
-                if (!users || users.length === 0) {
-                    container.innerHTML = `
-                        <div class="empty">
-                            <h3>👥 Пользователи не найдены</h3>
-                            <p>Создайте первого пользователя</p>
-                            <button onclick="app.admin.showCreateUserForm()" style="margin-top: 15px;">➕ Создать пользователя</button>
-                        </div>
-                    `;
-                    return;
-                }
-
-                container.innerHTML = `
-                <div class="table-container">
-                    <div class="table-header">
-                        <span>Пользователи системы</span>
-                        <span>${users.length}</span>
-                    </div>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Пользователь</th>
-                                <th>Роль</th>
-                                <th>Email</th>
-                                <th>Статус</th>
-                                <th>Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${users.map(u => `
-                                <tr>
-                                    <td>
-                                        <strong>${u.fullName}</strong><br>
-                                        <small>@${u.username}</small>
-                                    </td>
-                                    <td><span class="role-${u.role}">${app.getRoleText(u.role)}</span></td>
-                                    <td>${u.email || 'Не указан'}</td>
-                                    <td><span class="status-${u.isActive ? 'active' : 'blocked'}">${u.isActive ? 'Активен' : 'Заблокирован'}</span></td>
-                                    <td>
-                                        <button onclick="app.admin.resetPassword(${u.id})" title="Сбросить пароль">🔑</button>
-                                        <button onclick="app.admin.toggleStatus(${u.id}, ${u.isActive})" ${u.id === app.state.currentUser.id ? 'disabled' : ''} title="${u.isActive ? 'Заблокировать' : 'Разблокировать'}">${u.isActive ? '🔒' : '🔓'}</button>
-                                        ${u.id !== app.state.currentUser.id ? `<button onclick="app.admin.deleteUser(${u.id})" title="Удалить">🗑️</button>` : ''}
-                                    </td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            `;
-            },
-
-            showCreateUserForm() {
-                app.showModal(`
-                <h3>Создание пользователя</h3>
-                <form id="user-form">
-                    <input name="username" placeholder="Логин" required>
-                    <input name="password" type="password" placeholder="Пароль" required>
-                    <input name="fullName" placeholder="Полное имя" required>
-                    <select name="role" required>
-                        <option value="">Выберите роль</option>
-                        <option value="moderator">Модератор</option>
-                        <option value="skd">СКД</option>
-                        <option value="admin">Администратор</option>
-                    </select>
-                    <input name="email" type="email" placeholder="Email (необязательно)">
-                    <button type="submit">Создать</button>
-                </form>
-            `, async (formData) => {
-                    try {
-                        const userData = Object.fromEntries(formData);
-
-                        Object.keys(userData).forEach(key => {
-                            if (userData[key] === '' || userData[key] === null) {
-                                delete userData[key];
-                            }
-                        });
-
-                        const res = await fetch('/api/admin/users', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(userData)
-                        });
-
-                        const data = await res.json();
-
-                        if (res.ok) {
-                            app.showAlert('success', 'Пользователь создан успешно');
-                            this.load();
-                        } else {
-                            app.showAlert('error', data.error || 'Ошибка создания пользователя');
-                        }
-                    } catch (err) {
-                        app.showAlert('error', 'Ошибка сети: ' + err.message);
-                    }
-                });
-            },
-
-            async resetPassword(id) {
-                const password = prompt('Новый пароль:');
-                if (!password) return;
-
-                try {
-                    const res = await fetch(`/api/admin/users/${id}/reset-password`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ newPassword: password })
-                    });
-
-                    if (res.ok) {
-                        app.showAlert('success', 'Пароль сброшен');
-                    } else {
-                        app.showAlert('error', 'Ошибка сброса пароля');
-                    }
-                } catch (err) {
-                    app.showAlert('error', 'Ошибка сервера');
-                }
-            },
-
-            async toggleStatus(id, isActive) {
-                if (!confirm(isActive ? 'Заблокировать?' : 'Разблокировать?')) return;
-
-                try {
-                    const res = await fetch(`/api/admin/users/${id}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ isActive: !isActive })
-                    });
-
-                    if (res.ok) {
-                        app.showAlert('success', 'Статус изменен');
-                        this.load();
-                    } else {
-                        app.showAlert('error', 'Ошибка изменения статуса');
-                    }
-                } catch (err) {
-                    app.showAlert('error', 'Ошибка сервера');
-                }
-            },
-
-            async deleteUser(id) {
-                if (!confirm('Удалить пользователя?')) return;
-
-                try {
-                    const res = await fetch(`/api/admin/users/${id}`, { method: 'DELETE' });
-                    if (res.ok) {
-                        app.showAlert('success', 'Пользователь удален');
-                        this.load();
-                    } else {
-                        app.showAlert('error', 'Ошибка удаления');
-                    }
-                } catch (err) {
-                    app.showAlert('error', 'Ошибка сервера');
-                }
-            }
-        },
-
-        // Утилиты
-        updateUserInterface() {
-            const user = this.state.currentUser;
-            document.getElementById('user-badge').textContent = `${user.fullName} (${this.getRoleText(user.role)})`;
-
-            // Управление доступом к вкладкам
-            const adminTab = document.querySelector('[data-tab="admin"]');
-
-            if (user.role === 'skd') {
-                // СКД видит только сканер
-                document.querySelectorAll('.tab').forEach(t => {
-                    t.disabled = !['scanner'].includes(t.dataset.tab);
-                });
-                this.showTab('scanner');
-            } else if (user.role === 'admin') {
-                // Админ видит все, включая администрирование
-                document.querySelectorAll('.tab').forEach(t => t.disabled = false);
-                if (adminTab) adminTab.disabled = false;
-            } else if (user.role === 'moderator') {
-                // Модератор видит все кроме администрирования
-                document.querySelectorAll('.tab').forEach(t => {
-                    t.disabled = t.dataset.tab === 'admin';
-                });
-                if (adminTab) adminTab.disabled = true;
-            }
-        },
-
-        getRoleText(role) {
-            return { admin: 'Администратор', moderator: 'Модератор', skd: 'СКД' }[role] || role;
-        },
-
-        showAlert(type, message) {
-            const alert = document.createElement('div');
-            alert.className = `alert alert-${type}`;
-            alert.textContent = message;
-            document.body.appendChild(alert);
-            setTimeout(() => alert.remove(), 3000);
-        },
-
-        showModal(html, onSubmit) {
-            const modal = document.createElement('div');
-            modal.className = 'modal';
-            modal.innerHTML = `<div class="modal-content">${html}</div>`;
-            document.body.appendChild(modal);
-
-            modal.onclick = (e) => {
-                if (e.target === modal) modal.remove();
-            };
-
-            if (onSubmit) {
-                modal.querySelector('form').onsubmit = async (e) => {
-                    e.preventDefault();
-                    await onSubmit(new FormData(e.target));
-                    modal.remove();
-                };
-            }
-        },
-
-        renderPagination(type) {
-            const container = document.getElementById(`${type}-pagination`);
-            const pagination = this.state.pagination[type];
-
-            if (pagination.total <= 1) {
-                container.classList.add('hidden');
-                return;
-            }
-
-            container.innerHTML = `
-            <button onclick="app.${type}.load(${pagination.page - 1})" ${pagination.page === 1 ? 'disabled' : ''}>←</button>
-            <span>Страница ${pagination.page} из ${pagination.pages}</span>
-            <button onclick="app.${type}.load(${pagination.page + 1})" ${pagination.page === pagination.pages ? 'disabled' : ''}>→</button>
-        `;
-            container.classList.remove('hidden');
-        },
-
-        debounce(func, wait) {
-            let timeout;
-            return function executedFunction(...args) {
-                const later = () => {
-                    clearTimeout(timeout);
-                    func(...args);
-                };
-                clearTimeout(timeout);
-                timeout = setTimeout(later, wait);
-            };
-        }
-    };
-
-    // Функции для отладки (доступны в консоли браузера)
-    window.debugApp = {
-        testEventsAPI: () => app.visitors.testEventsAPI(),
-        loadEvents: () => app.events.loadActiveForFilters(),
-        state: () => console.log('App state:', app.state),
-        checkAuth: () => app.auth.check(),
-        createTestEvents: () => app.events.createTestEventsIfNeeded(),
-
-        // Принудительное обновление фильтра
-        forceUpdateFilter: async () => {
-            console.log('🔄 Принудительное обновление фильтра...');
-            const filter = document.getElementById('event-filter');
-            if (!filter) {
-                console.error('❌ Фильтр не найден');
-                return;
-            }
-
-            filter.innerHTML = '<option value="">🔄 Загрузка...</option>';
-
-            try {
-                await app.events.loadActiveForFilters();
-                console.log('✅ Обновление завершено');
-            } catch (err) {
-                console.error('❌ Ошибка обновления:', err);
-                filter.innerHTML = '<option value="">❌ Ошибка</option>';
-            }
-        },
-
-        // Диагностика системы
-        diagnose: async () => {
-            console.log('🔍 Диагностика системы событий...');
-
-            // Проверяем API
-            const apiTests = [
-                { name: 'События (основной)', url: '/api/events' },
-                { name: 'События (альтернативный)', url: '/api/visitors/events/active' },
-                { name: 'Авторизация', url: '/api/auth/check' }
-            ];
-
-            for (const test of apiTests) {
-                try {
-                    const res = await fetch(test.url);
-                    const data = await res.json();
-                    console.log(`✅ ${test.name}:`, res.status, data);
-                } catch (err) {
-                    console.log(`❌ ${test.name}:`, err.message);
-                }
-            }
-
-            // Проверяем DOM
-            const elements = [
-                'event-filter',
-                'visitor-form',
-                'events-list'
-            ];
-
-            elements.forEach(id => {
-                const el = document.getElementById(id);
-                console.log(`${el ? '✅' : '❌'} Элемент #${id}:`, el ? 'найден' : 'отсутствует');
-            });
-
-            // Проверяем состояние приложения
-            console.log('📊 Состояние приложения:');
-            console.log('- Пользователь:', app.state.currentUser);
-            console.log('- События:', app.state.events?.length || 0);
-            console.log('- Посетители:', app.state.visitors?.length || 0);
-        }
-    };
-
-    console.log('🛠️ Доступны функции отладки: window.debugApp');
-    console.log('   - debugApp.testEventsAPI() - тест API событий');
-    console.log('   - debugApp.loadEvents() - перезагрузка событий');
-    console.log('   - debugApp.forceUpdateFilter() - принудительное обновление');
-    console.log('   - debugApp.createTestEvents() - создать тестовые события');
-    console.log('   - debugApp.diagnose() - полная диагностика');
-    console.log('   - debugApp.state() - состояние приложения');
-
-    // Запуск приложения
-    document.addEventListener('DOMContentLoaded', () => app.init());
-</script>
-</body>
-</html>
+`;
+}
+}
+},
+
+// Создание тестовых событий если их нет
+async createTestEventsIfNeeded() {
+try {
+console.log('Попытка создания тестовых событий...');
+
+const testEvents = [
+{
+name: 'IT-Конференция 2024',
+description: 'Ежегодная конференция по информационным технологиям',
+start_date: '2024-12-01',
+end_date: '2024-12-31',
+location: 'Москва, ЦВК "Экспоцентр"',
+status: 'active'
+},
+{
+name: 'Выставка инноваций',
+description: 'Выставка новых технологий и стартапов',
+start_date: '2024-11-15',
+end_date: '2024-12-15',
+location: 'СПб, Ленэкспо',
+status: 'active'
+},
+{
+name: 'Семинар по безопасности',
+description: 'Обучающий семинар по кибербезопасности',
+start_date: '2024-11-01',
+end_date: '2024-12-01',
+location: 'Онлайн',
+status: 'active'
+}
+];
+
+let createdCount = 0;
+for (const eventData of testEvents) {
+try {
+const res = await fetch('/api/events', {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify(eventData)
+});
+
+if (res.ok) {
+createdCount++;
+console.log(`✅ Создано событие: ${eventData.name}`);
+} else {
+console.log(`⚠️ Не удалось создать событие: ${eventData.name}`);
+}
+} catch (err) {
+console.log(`❌ Ошибка создания события ${eventData.name}:`, err.message);
+}
+}
+
+if (createdCount > 0) {
+app.showAlert('success', `Создано ${createdCount} тестовых событий`);
+// Обновляем фильтры
+await this.loadActiveForFilters();
+await this.loadActiveForForm();
+} else {
+console.log('Не удалось создать тестовые события');
+}
+
+} catch (err) {
+console.error('Ошибка создания тестовых событий:', err);
+}
+},
+
+formatDate(dateString) {
+if (!dateString) return '';
+return new Date(dateString).toLocaleDateString('ru-RU');
+},
+
+// Остальные методы (render, showCreateForm, viewDetails, toggleStatus, delete) остаются без изменений
+}
