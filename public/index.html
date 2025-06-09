@@ -53,7 +53,9 @@
                 <span>Список посетителей</span>
                 <span id="visitors-count">0</span>
             </div>
-            <div id="visitors-table" class="loading">Загрузка...</div>
+            <div id="visitors-table">
+                <div class="empty">Загрузка...</div>
+            </div>
         </div>
 
         <div id="visitors-pagination" class="pagination hidden"></div>
@@ -125,15 +127,24 @@
             this.setupEventListeners();
 
             if (await this.auth.check()) {
-                // Сначала загружаем события для фильтров
-                await this.events.loadActiveForFilters();
+                try {
+                    // Сначала загружаем события для фильтров
+                    console.log('📋 Загрузка событий для фильтров...');
+                    await this.events.loadActiveForFilters();
 
-                // Затем загружаем остальные данные
-                await Promise.all([
-                    this.visitors.load(),
-                    this.stats.load()
-                ]);
-                console.log('✅ Готово');
+                    // Затем загружаем посетителей
+                    console.log('👥 Загрузка посетителей...');
+                    await this.visitors.load();
+
+                    // И статистику
+                    console.log('📊 Загрузка статистики...');
+                    await this.stats.load();
+
+                    console.log('✅ Инициализация завершена успешно');
+                } catch (err) {
+                    console.error('❌ Ошибка инициализации:', err);
+                    app.showAlert('error', 'Ошибка инициализации: ' + err.message);
+                }
             }
         },
 
@@ -211,24 +222,43 @@
         // Посетители
         visitors: {
             async load(page = 1) {
-                const params = new URLSearchParams({
-                    page,
-                    limit: app.state.pagination.visitors.size,
-                    search: document.getElementById('search-input').value,
-                    status: document.getElementById('status-filter').value,
-                    event_id: document.getElementById('event-filter').value
-                });
+                const container = document.getElementById('visitors-table');
 
                 try {
+                    // Показываем индикацию загрузки
+                    container.innerHTML = '<div class="loading">Загрузка посетителей...</div>';
+
+                    const params = new URLSearchParams({
+                        page,
+                        limit: app.state.pagination.visitors.size,
+                        search: document.getElementById('search-input').value,
+                        status: document.getElementById('status-filter').value,
+                        event_id: document.getElementById('event-filter').value
+                    });
+
                     const res = await fetch(`/api/visitors?${params}`);
+
+                    if (!res.ok) {
+                        const errorData = await res.json().catch(() => ({ error: 'Ошибка сервера' }));
+                        throw new Error(errorData.error || `HTTP ${res.status}`);
+                    }
+
                     const data = await res.json();
 
-                    app.state.visitors = data.visitors;
-                    app.state.pagination.visitors = data.pagination;
+                    app.state.visitors = data.visitors || [];
+                    app.state.pagination.visitors = data.pagination || { page: 1, size: 25, total: 0, pages: 1 };
 
                     this.render();
                 } catch (err) {
-                    app.showAlert('error', 'Ошибка загрузки посетителей');
+                    console.error('Ошибка загрузки посетителей:', err);
+                    container.innerHTML = `
+                        <div class="empty" style="color: #dc3545;">
+                            <h3>❌ Ошибка загрузки посетителей</h3>
+                            <p>${err.message}</p>
+                            <button onclick="app.visitors.load()" style="margin-top: 10px;">🔄 Попробовать снова</button>
+                        </div>
+                    `;
+                    app.showAlert('error', 'Ошибка загрузки посетителей: ' + err.message);
                 }
             },
 
@@ -236,10 +266,24 @@
                 const container = document.getElementById('visitors-table');
                 const visitors = app.state.visitors;
 
-                document.getElementById('visitors-count').textContent = visitors.length;
+                // Обновляем счетчик посетителей
+                const countElement = document.getElementById('visitors-count');
+                if (countElement) {
+                    countElement.textContent = visitors ? visitors.length : 0;
+                }
 
-                if (visitors.length === 0) {
-                    container.innerHTML = '<div class="empty">Посетители не найдены</div>';
+                if (!visitors || visitors.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty">
+                            <h3>👥 Посетители не найдены</h3>
+                            <p>Попробуйте изменить параметры поиска или создайте первого посетителя</p>
+                            <button onclick="app.showTab('add-visitor')" style="margin-top: 15px;">➕ Добавить посетителя</button>
+                        </div>
+                    `;
+
+                    // Скрываем пагинацию
+                    const pagination = document.getElementById('visitors-pagination');
+                    if (pagination) pagination.classList.add('hidden');
                     return;
                 }
 
@@ -277,6 +321,7 @@
                 </table>
             `;
 
+                // Показываем пагинацию
                 app.renderPagination('visitors');
             },
 
@@ -414,6 +459,37 @@
                         }
                     })
                     .catch(err => console.error('❌ Ошибка API:', err));
+            },
+
+            // Функция для отладки загрузки посетителей
+            debugVisitorsLoad() {
+                const container = document.getElementById('visitors-table');
+                console.log('🔍 Отладка загрузки посетителей:');
+                console.log('- Контейнер найден:', !!container);
+                console.log('- Содержимое контейнера:', container ? container.innerHTML.substring(0, 100) + '...' : 'N/A');
+                console.log('- Состояние app.state.visitors:', app.state.visitors);
+                console.log('- Количество посетителей:', app.state.visitors ? app.state.visitors.length : 'N/A');
+
+                // Проверяем API
+                const params = new URLSearchParams({
+                    page: 1,
+                    limit: 25,
+                    search: document.getElementById('search-input').value,
+                    status: document.getElementById('status-filter').value,
+                    event_id: document.getElementById('event-filter').value
+                });
+
+                console.log('🌐 Проверка API посетителей...');
+                fetch(`/api/visitors?${params}`)
+                    .then(r => r.json())
+                    .then(data => {
+                        console.log('📊 Ответ API посетителей:', data);
+                        console.log('📊 Количество посетителей в API:', data.visitors ? data.visitors.length : 'N/A');
+                        if (data.visitors && data.visitors.length > 0) {
+                            console.log('📊 Первый посетитель:', data.visitors[0]);
+                        }
+                    })
+                    .catch(err => console.error('❌ Ошибка API посетителей:', err));
             },
 
             resetForm() {
