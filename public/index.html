@@ -183,7 +183,7 @@
             document.getElementById('event-filter').onchange = () => this.visitors.load(1);
 
             // Форма посетителя
-            document.getElementById('visitor-form').onsubmit = this.visitors.create.bind(this);
+            document.getElementById('visitor-form').onsubmit = (e) => this.visitors.create(e);
         },
 
         // Переключение вкладок
@@ -217,6 +217,23 @@
                 } catch (err) {
                     console.error(`Ошибка загрузки данных для вкладки ${tab}:`, err);
                 }
+            }
+        },
+
+        // Выход из системы
+        async logout() {
+            try {
+                const res = await fetch('/api/auth/logout', { method: 'POST' });
+
+                if (res.ok) {
+                    window.location.href = '/login';
+                } else {
+                    this.showAlert('error', 'Ошибка выхода из системы');
+                }
+            } catch (err) {
+                console.error('Ошибка выхода:', err);
+                // Даже если запрос не удался, перенаправляем на login
+                window.location.href = '/login';
             }
         },
 
@@ -403,6 +420,16 @@
                 }
             },
 
+            downloadQRCanvas() {
+                const canvas = document.getElementById('qr-canvas');
+                if (canvas) {
+                    const link = document.createElement('a');
+                    link.download = 'visitor-qr-code.png';
+                    link.href = canvas.toDataURL();
+                    link.click();
+                }
+            },
+
             async toggleStatus(id, currentStatus) {
                 const newStatus = currentStatus === 'active' ? 'blocked' : 'active';
                 const action = newStatus === 'active' ? 'разблокировать' : 'заблокировать';
@@ -454,67 +481,6 @@
                 this.load(1);
             },
 
-            // Функция для отладки фильтра событий
-            debugEventFilter() {
-                const filter = document.getElementById('event-filter');
-                console.log('🔍 Отладка фильтра событий:');
-                console.log('- Элемент найден:', !!filter);
-                console.log('- Количество опций:', filter ? filter.options.length : 0);
-                console.log('- Содержимое:', filter ? filter.innerHTML : 'N/A');
-
-                if (filter && filter.options.length > 0) {
-                    console.log('- Опции:');
-                    for (let i = 0; i < filter.options.length; i++) {
-                        const option = filter.options[i];
-                        console.log(`  ${i}: "${option.text}" (value: "${option.value}", disabled: ${option.disabled})`);
-                    }
-                }
-
-                // Также проверяем API напрямую
-                console.log('🌐 Проверка API...');
-                fetch('/api/visitors/events/active')
-                    .then(r => r.json())
-                    .then(data => {
-                        console.log('📊 Ответ API:', data);
-                        console.log('📊 Количество событий в API:', data.events ? data.events.length : 'N/A');
-                        if (data.events && data.events.length > 0) {
-                            console.log('📊 Первое событие:', data.events[0]);
-                        }
-                    })
-                    .catch(err => console.error('❌ Ошибка API:', err));
-            },
-
-            // Функция для отладки загрузки посетителей
-            debugVisitorsLoad() {
-                const container = document.getElementById('visitors-table');
-                console.log('🔍 Отладка загрузки посетителей:');
-                console.log('- Контейнер найден:', !!container);
-                console.log('- Содержимое контейнера:', container ? container.innerHTML.substring(0, 100) + '...' : 'N/A');
-                console.log('- Состояние app.state.visitors:', app.state.visitors);
-                console.log('- Количество посетителей:', app.state.visitors ? app.state.visitors.length : 'N/A');
-
-                // Проверяем API
-                const params = new URLSearchParams({
-                    page: 1,
-                    limit: 25,
-                    search: document.getElementById('search-input').value,
-                    status: document.getElementById('status-filter').value,
-                    event_id: document.getElementById('event-filter').value
-                });
-
-                console.log('🌐 Проверка API посетителей...');
-                fetch(`/api/visitors?${params}`)
-                    .then(r => r.json())
-                    .then(data => {
-                        console.log('📊 Ответ API посетителей:', data);
-                        console.log('📊 Количество посетителей в API:', data.visitors ? data.visitors.length : 'N/A');
-                        if (data.visitors && data.visitors.length > 0) {
-                            console.log('📊 Первый посетитель:', data.visitors[0]);
-                        }
-                    })
-                    .catch(err => console.error('❌ Ошибка API посетителей:', err));
-            },
-
             resetForm() {
                 document.getElementById('visitor-form').reset();
                 document.getElementById('qr-result').classList.add('hidden');
@@ -552,32 +518,6 @@
                     })
                     .catch(err => console.error('❌ Ошибка запроса:', err));
 
-                // Тест 2: Проверяем все события
-                console.log('📡 Тест 2: /api/events');
-                fetch('/api/events')
-                    .then(response => response.json())
-                    .then(data => {
-                        console.log('📊 Все события:', data);
-                        if (data.events) {
-                            console.log(`📊 Всего событий: ${data.events.length}`);
-                            const activeEvents = data.events.filter(e => e.status === 'active');
-                            console.log(`📊 Активных событий: ${activeEvents.length}`);
-                        }
-                    })
-                    .catch(err => console.error('❌ Ошибка запроса всех событий:', err));
-
-                // Тест 3: Проверяем состояние фильтра
-                console.log('📡 Тест 3: Состояние DOM');
-                const filter = document.getElementById('event-filter');
-                if (filter) {
-                    console.log('📊 Фильтр найден, опций:', filter.options.length);
-                    for (let i = 0; i < filter.options.length; i++) {
-                        console.log(`  ${i}: "${filter.options[i].text}" (value: "${filter.options[i].value}")`);
-                    }
-                } else {
-                    console.error('❌ Фильтр не найден в DOM');
-                }
-
                 app.showAlert('info', 'Тест API запущен, смотрите консоль для результатов');
             }
         },
@@ -608,8 +548,6 @@
 
                     const data = await res.json();
                     console.log('📋 Полученные данные:', data);
-                    console.log('📋 Тип data.events:', typeof data.events, Array.isArray(data.events));
-                    console.log('📋 Количество событий:', data.events ? data.events.length : 'undefined');
 
                     // Проверяем элемент ПОСЛЕ запроса
                     const filterAfter = document.getElementById('event-filter');
@@ -625,20 +563,12 @@
                         if (data.events.length > 0) {
                             console.log('✅ Добавление событий в фильтр...');
                             data.events.forEach((event, index) => {
-                                console.log(`  📌 Событие ${index + 1}:`, {
-                                    id: event.id,
-                                    name: event.name,
-                                    status: event.status
-                                });
-
                                 const option = document.createElement('option');
                                 option.value = event.id;
                                 option.textContent = event.name;
                                 filterAfter.appendChild(option);
                             });
-                            console.log(`✅ Успешно добавлено ${data.events.length} событий в фильтр`);
                         } else {
-                            console.log('ℹ️ Массив событий пустой');
                             const option = document.createElement('option');
                             option.value = '';
                             option.textContent = 'Нет активных событий';
@@ -646,7 +576,6 @@
                             filterAfter.appendChild(option);
                         }
                     } else {
-                        console.error('❌ data.events не является массивом:', data.events);
                         const option = document.createElement('option');
                         option.value = '';
                         option.textContent = 'Ошибка формата данных';
@@ -654,19 +583,10 @@
                         filterAfter.appendChild(option);
                     }
 
-                    // Проверяем финальное состояние
-                    console.log('🔍 Финальное состояние фильтра:');
-                    console.log('  - Количество опций:', filterAfter.options.length);
-                    for (let i = 0; i < filterAfter.options.length; i++) {
-                        console.log(`  - Опция ${i}:`, filterAfter.options[i].text, `(value: ${filterAfter.options[i].value})`);
-                    }
-
                     console.log('✅ Загрузка событий для фильтра завершена');
                 } catch (err) {
                     console.error('❌ Ошибка загрузки активных событий для фильтра:', err);
-                    console.error('❌ Стек ошибки:', err.stack);
 
-                    // Показываем ошибку в фильтре
                     const filter = document.getElementById('event-filter');
                     if (filter) {
                         filter.innerHTML = '<option value="">Все события</option><option value="" disabled>Ошибка загрузки</option>';
@@ -684,56 +604,36 @@
 
                     if (!res.ok) {
                         const errorData = await res.json().catch(() => ({ error: 'Неизвестная ошибка' }));
-                        console.error('Ошибка загрузки событий для формы:', errorData);
                         throw new Error(errorData.error || `HTTP ${res.status}`);
                     }
 
                     const data = await res.json();
-                    console.log('Активные события загружены для формы:', data);
 
-                    // Проверяем, что элемент существует
                     const select = document.querySelector('#visitor-form select[name="eventId"]');
                     if (!select) {
                         console.error('Элемент select[name="eventId"] не найден в форме');
                         return;
                     }
 
-                    // Очищаем форму
                     select.innerHTML = '<option value="">Выберите событие</option>';
 
-                    if (data.events && Array.isArray(data.events)) {
-                        if (data.events.length > 0) {
-                            // Есть события - добавляем их
-                            data.events.forEach(event => {
-                                const option = document.createElement('option');
-                                option.value = event.id;
-                                option.textContent = event.name;
-                                select.appendChild(option);
-                            });
-                            console.log(`✅ Добавлено ${data.events.length} событий в форму`);
-                        } else {
-                            // Нет событий - добавляем соответствующую опцию
+                    if (data.events && Array.isArray(data.events) && data.events.length > 0) {
+                        data.events.forEach(event => {
                             const option = document.createElement('option');
-                            option.value = '';
-                            option.textContent = 'Нет активных событий';
-                            option.disabled = true;
+                            option.value = event.id;
+                            option.textContent = event.name;
                             select.appendChild(option);
-                            console.log('ℹ️ Нет активных событий для формы');
-                        }
+                        });
                     } else {
-                        console.error('Неверный формат ответа для формы:', data);
                         const option = document.createElement('option');
                         option.value = '';
-                        option.textContent = 'Ошибка формата данных';
+                        option.textContent = 'Нет активных событий';
                         option.disabled = true;
                         select.appendChild(option);
                     }
-
-                    console.log('Форма событий обновлена успешно');
                 } catch (err) {
                     console.error('Ошибка загрузки активных событий для формы:', err);
 
-                    // Показываем ошибку в форме
                     const select = document.querySelector('#visitor-form select[name="eventId"]');
                     if (select) {
                         select.innerHTML = '<option value="">Выберите событие</option><option value="" disabled>Ошибка загрузки</option>';
@@ -745,7 +645,6 @@
 
             async load() {
                 try {
-                    console.log('Загрузка всех событий...');
                     const res = await fetch('/api/events');
 
                     if (!res.ok) {
@@ -754,15 +653,12 @@
                     }
 
                     const data = await res.json();
-                    console.log('События загружены:', data);
-
                     app.state.events = data.events || [];
                     this.render();
                 } catch (err) {
                     console.error('Ошибка загрузки событий:', err);
                     app.showAlert('error', 'Ошибка загрузки событий: ' + err.message);
 
-                    // Показываем сообщение об ошибке в контейнере
                     const container = document.getElementById('events-list');
                     if (container) {
                         container.innerHTML = `
@@ -784,7 +680,6 @@
                 }
 
                 const events = app.state.events;
-                console.log('Отрисовка событий:', events);
 
                 if (!events || events.length === 0) {
                     container.innerHTML = `
@@ -883,14 +778,11 @@
                         const eventData = Object.fromEntries(formData);
                         eventData.registration_required = formData.get('registration_required') === 'on';
 
-                        // Убираем пустые поля
                         Object.keys(eventData).forEach(key => {
                             if (eventData[key] === '' || eventData[key] === null) {
                                 delete eventData[key];
                             }
                         });
-
-                        console.log('Создание события:', eventData);
 
                         const res = await fetch('/api/events', {
                             method: 'POST',
@@ -904,8 +796,8 @@
                             app.showAlert('success', 'Событие создано успешно');
                             this.load();
                             try {
-                                await this.loadActiveForFilters(); // Обновляем фильтр на вкладке посетителей
-                                await this.loadActiveForForm(); // Обновляем форму добавления
+                                await this.loadActiveForFilters();
+                                await this.loadActiveForForm();
                             } catch (err) {
                                 console.error('Ошибка обновления фильтров после создания события:', err);
                             }
@@ -974,8 +866,8 @@
                         app.showAlert('success', data.message);
                         this.load();
                         try {
-                            await this.loadActiveForFilters(); // Обновляем фильтр
-                            await this.loadActiveForForm(); // Обновляем форму
+                            await this.loadActiveForFilters();
+                            await this.loadActiveForForm();
                         } catch (err) {
                             console.error('Ошибка обновления фильтров после изменения статуса:', err);
                         }
@@ -999,8 +891,8 @@
                         app.showAlert('success', data.message);
                         this.load();
                         try {
-                            await this.loadActiveForFilters(); // Обновляем фильтр
-                            await this.loadActiveForForm(); // Обновляем форму
+                            await this.loadActiveForFilters();
+                            await this.loadActiveForForm();
                         } catch (err) {
                             console.error('Ошибка обновления фильтров после удаления события:', err);
                         }
@@ -1058,21 +950,29 @@
             },
 
             async handleResult(qrData) {
-                let uuid = null;
+                let barcode = null;
 
-                if (qrData.includes('/scan/')) {
-                    uuid = qrData.split('/scan/')[1];
-                } else if (qrData.match(/[0-9a-f-]{36}/i)) {
-                    uuid = qrData.match(/[0-9a-f-]{36}/i)[0];
+                // Если QR содержит штрихкод напрямую
+                if (qrData.match(/^VIS\d+$/)) {
+                    barcode = qrData;
+                } else if (qrData.includes('/scan/')) {
+                    // Если QR содержит URL
+                    barcode = qrData.split('/scan/')[1];
+                } else {
+                    // Попробуем найти штрихкод в строке
+                    const match = qrData.match(/VIS\d+/);
+                    if (match) {
+                        barcode = match[0];
+                    }
                 }
 
-                if (!uuid) {
+                if (!barcode) {
                     app.showAlert('error', 'Некорректный QR код');
                     return;
                 }
 
                 try {
-                    const res = await fetch(`/api/scan/${uuid}`);
+                    const res = await fetch(`/api/scan/${barcode}`);
                     const data = await res.json();
 
                     this.showResult(data);
@@ -1252,19 +1152,10 @@
                     try {
                         const userData = Object.fromEntries(formData);
 
-                        // Убираем пустые поля
                         Object.keys(userData).forEach(key => {
                             if (userData[key] === '' || userData[key] === null) {
                                 delete userData[key];
                             }
-                        });
-
-                        console.log('📝 Создание пользователя:', {
-                            username: userData.username,
-                            fullName: userData.fullName,
-                            role: userData.role,
-                            email: userData.email,
-                            hasPassword: !!userData.password
                         });
 
                         const res = await fetch('/api/admin/users', {
@@ -1274,17 +1165,14 @@
                         });
 
                         const data = await res.json();
-                        console.log('📊 Ответ сервера:', data);
 
                         if (res.ok) {
                             app.showAlert('success', 'Пользователь создан успешно');
                             this.load();
                         } else {
-                            console.error('❌ Ошибка создания пользователя:', data);
                             app.showAlert('error', data.error || 'Ошибка создания пользователя');
                         }
                     } catch (err) {
-                        console.error('❌ Ошибка сети:', err);
                         app.showAlert('error', 'Ошибка сети: ' + err.message);
                     }
                 });
@@ -1434,44 +1322,38 @@
                 clearTimeout(timeout);
                 timeout = setTimeout(later, wait);
             };
-        },
-
-        // Глобальные функции для отладки (доступны в консоли браузера)
-        window.debugApp = {
-            testEventsAPI: () => app.visitors.testEventsAPI(),
-            loadEvents: () => app.events.loadActiveForFilters(),
-            debugFilter: () => app.visitors.debugEventFilter(),
-            debugVisitors: () => app.visitors.debugVisitorsLoad(),
-            state: () => console.log('App state:', app.state),
-            checkAuth: () => app.auth.check(),
-
-            // Принудительное обновление фильтра
-            forceUpdateFilter: async () => {
-                console.log('🔄 Принудительное обновление фильтра...');
-                const filter = document.getElementById('event-filter');
-                if (!filter) {
-                    console.error('❌ Фильтр не найден');
-                    return;
-                }
-
-                filter.innerHTML = '<option value="">🔄 Загрузка...</option>';
-
-                try {
-                    await app.events.loadActiveForFilters();
-                    console.log('✅ Обновление завершено');
-                } catch (err) {
-                    console.error('❌ Ошибка обновления:', err);
-                    filter.innerHTML = '<option value="">❌ Ошибка</option>';
-                }
-            }
-        };
-
-        console.log('🛠️ Доступны функции отладки: window.debugApp');
-        console.log('   - debugApp.testEventsAPI() - тест API событий');
-        console.log('   - debugApp.loadEvents() - перезагрузка событий');
-        console.log('   - debugApp.forceUpdateFilter() - принудительное обновление');
-        console.log('   - debugApp.state() - состояние приложения');
+        }
     };
+
+    // Функции для отладки (доступны в консоли браузера)
+    window.debugApp = {
+        testEventsAPI: () => app.visitors.testEventsAPI(),
+        loadEvents: () => app.events.loadActiveForFilters(),
+        state: () => console.log('App state:', app.state),
+        checkAuth: () => app.auth.check(),
+
+        // Принудительное обновление фильтра
+        forceUpdateFilter: async () => {
+            console.log('🔄 Принудительное обновление фильтра...');
+            const filter = document.getElementById('event-filter');
+            if (!filter) {
+                console.error('❌ Фильтр не найден');
+                return;
+            }
+
+            filter.innerHTML = '<option value="">🔄 Загрузка...</option>';
+
+            try {
+                await app.events.loadActiveForFilters();
+                console.log('✅ Обновление завершено');
+            } catch (err) {
+                console.error('❌ Ошибка обновления:', err);
+                filter.innerHTML = '<option value="">❌ Ошибка</option>';
+            }
+        }
+    };
+
+    console.log('🛠️ Доступны функции отладки: window.debugApp');
 
     // Запуск приложения
     document.addEventListener('DOMContentLoaded', () => app.init());
