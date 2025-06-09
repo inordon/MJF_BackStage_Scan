@@ -850,8 +850,9 @@
             <div class="form-group">
                 <label for="event-select">Событие <span class="required">*</span></label>
                 <select id="event-select" name="eventId" required>
-                    <option value="">Выберите событие</option>
+                    <option value="">Загрузка событий...</option>
                 </select>
+                <div id="events-status" style="margin-top: 5px; font-size: 12px; color: #666;"></div>
             </div>
 
             <div class="form-row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
@@ -882,6 +883,22 @@
 
             <button type="submit">Создать посетителя и QR-код</button>
         </form>
+
+        <!-- Кнопки диагностики -->
+        <div id="events-diagnostics" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #17a2b8;">
+            <h4 style="color: #17a2b8; margin-bottom: 10px;">🔧 Управление событиями</h4>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button type="button" onclick="loadActiveEvents()" style="background: linear-gradient(135deg, #6c757d, #545b62); padding: 8px 16px; font-size: 14px;">
+                    🔄 Обновить события
+                </button>
+                <button type="button" onclick="showTab('events')" style="background: linear-gradient(135deg, #28a745, #1e7e34); padding: 8px 16px; font-size: 14px;">
+                    🎯 Перейти к событиям
+                </button>
+                <button type="button" onclick="showCreateEventForm()" style="background: linear-gradient(135deg, #28a745, #1e7e34); padding: 8px 16px; font-size: 14px;">
+                    ➕ Создать событие
+                </button>
+            </div>
+        </div>
 
         <div id="visitor-result" class="hidden">
             <div style="text-align: center; padding: 20px; background: #f8f9fa; border-radius: 12px; margin-top: 20px;">
@@ -1027,7 +1044,7 @@
         if (isAuthenticated) {
             console.log('📊 Загрузка данных...');
             await Promise.all([
-                loadActiveEvents(),
+                loadActiveEvents(), // Загружаем события в первую очередь
                 loadVisitors(),
                 loadStats(),
                 loadEvents()
@@ -1161,6 +1178,7 @@
         } else if (tabName === 'events') {
             loadEvents();
         } else if (tabName === 'add-visitor') {
+            // Загружаем активные события при переходе на вкладку добавления посетителя
             loadActiveEvents();
         }
     }
@@ -1168,31 +1186,70 @@
     // Загрузка активных событий для выбора
     async function loadActiveEvents() {
         try {
+            console.log('🔄 Загрузка активных событий...');
+
             const response = await fetch('/api/visitors/events/active');
-            const data = await response.json();
 
             if (!response.ok) {
-                throw new Error(data.error);
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+
+            if (!data.events) {
+                throw new Error('Некорректный ответ сервера: отсутствует поле events');
             }
 
             activeEvents = data.events;
             updateEventSelectors();
+
             console.log(`✅ Загружено ${activeEvents.length} активных событий`);
 
+            // Если нет событий, показываем предупреждение
+            if (activeEvents.length === 0) {
+                showAlert('warning', 'Нет активных событий. Создайте событие в разделе "События" перед добавлением посетителей.');
+            }
+
         } catch (err) {
-            console.error('Ошибка загрузки активных событий:', err);
+            console.error('❌ Ошибка загрузки активных событий:', err);
             activeEvents = [];
-            showAlert('error', 'Ошибка загрузки списка событий');
+            updateEventSelectors();
+            showAlert('error', `Ошибка загрузки списка событий: ${err.message}`);
         }
     }
 
     function updateEventSelectors() {
         const eventSelect = document.getElementById('event-select');
         const eventFilter = document.getElementById('event-filter');
+        const eventsStatus = document.getElementById('events-status');
 
+        if (!eventSelect || !eventFilter) {
+            console.warn('⚠️ Селекторы событий не найдены в DOM');
+            return;
+        }
+
+        // Очищаем селекторы
         eventSelect.innerHTML = '<option value="">Выберите событие</option>';
         eventFilter.innerHTML = '<option value="">Все события</option>';
 
+        if (activeEvents.length === 0) {
+            // Если нет событий, добавляем информационную опцию
+            const noEventsOption = document.createElement('option');
+            noEventsOption.value = '';
+            noEventsOption.textContent = '❌ Нет активных событий - создайте событие';
+            noEventsOption.disabled = true;
+            eventSelect.appendChild(noEventsOption);
+
+            if (eventsStatus) {
+                eventsStatus.innerHTML = '⚠️ Нет активных событий. <a href="#" onclick="showTab(\'events\')">Создайте событие</a> или <a href="#" onclick="loadActiveEvents()">обновите список</a>';
+                eventsStatus.style.color = '#856404';
+            }
+
+            console.log('⚠️ Селекторы обновлены: нет активных событий');
+            return;
+        }
+
+        // Заполняем селекторы событиями
         activeEvents.forEach(event => {
             const startDate = new Date(event.start_date).toLocaleDateString('ru-RU');
             const endDate = new Date(event.end_date).toLocaleDateString('ru-RU');
@@ -1204,12 +1261,25 @@
                 optionText += ` (${startDate} - ${endDate})`;
             }
 
-            const addOption = new Option(optionText, event.id);
+            // Для селектора добавления посетителя
+            const addOption = document.createElement('option');
+            addOption.value = event.id;
+            addOption.textContent = optionText;
             eventSelect.appendChild(addOption);
 
-            const filterOption = new Option(optionText, event.id);
+            // Для фильтра посетителей
+            const filterOption = document.createElement('option');
+            filterOption.value = event.id;
+            filterOption.textContent = optionText;
             eventFilter.appendChild(filterOption);
         });
+
+        if (eventsStatus) {
+            eventsStatus.innerHTML = `✅ Загружено ${activeEvents.length} активных событий`;
+            eventsStatus.style.color = '#155724';
+        }
+
+        console.log(`✅ Селекторы событий обновлены: ${activeEvents.length} событий`);
     }
 
     // Загрузка посетителей
@@ -2320,6 +2390,102 @@
                 <div style="background: white; padding: 30px; border-radius: 12px; width: 90%; max-width: 500px; max-height: 90vh; overflow-y: auto;">
                     <h3 style="margin-bottom: 20px; color: #333;">Создание пользователя</h3>
                     <form id="create-user-form">
+                        <div style="margin-bottom: 20px;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">Логин <span style="color: #dc3545;">*</span></label>
+                            <input type="text" name="username" required minlength="3" maxlength="50" pattern="^[a-zA-Z0-9_]+$" style="width: 100%; padding: 12px 16px; border: 2px solid #e9ecef; border-radius: 10px; font-size: 16px; transition: all 0.3s ease; background: #f8f9fa;">
+                            <small style="color: #666; font-size: 12px;">Только буквы, цифры и подчеркивание (3-50 символов)</small>
+                        </div>
+                        <div style="margin-bottom: 20px;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">Пароль <span style="color: #dc3545;">*</span></label>
+                            <input type="password" name="password" required minlength="6" style="width: 100%; padding: 12px 16px; border: 2px solid #e9ecef; border-radius: 10px; font-size: 16px; transition: all 0.3s ease; background: #f8f9fa;">
+                            <small style="color: #666; font-size: 12px;">Минимум 6 символов</small>
+                        </div>
+                        <div style="margin-bottom: 20px;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">Полное имя <span style="color: #dc3545;">*</span></label>
+                            <input type="text" name="fullName" required minlength="2" maxlength="100" style="width: 100%; padding: 12px 16px; border: 2px solid #e9ecef; border-radius: 10px; font-size: 16px; transition: all 0.3s ease; background: #f8f9fa;">
+                        </div>
+                        <div style="margin-bottom: 20px;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">Роль <span style="color: #dc3545;">*</span></label>
+                            <select name="role" required style="width: 100%; padding: 12px 16px; border: 2px solid #e9ecef; border-radius: 10px; font-size: 16px; transition: all 0.3s ease; background: #f8f9fa;">
+                                <option value="">Выберите роль</option>
+                                <option value="moderator">Модератор - управление посетителями и событиями</option>
+                                <option value="skd">СКД - только сканирование QR-кодов</option>
+                                <option value="admin">Администратор - полный доступ</option>
+                            </select>
+                        </div>
+                        <div style="margin-bottom: 20px;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">Email</label>
+                            <input type="email" name="email" style="width: 100%; padding: 12px 16px; border: 2px solid #e9ecef; border-radius: 10px; font-size: 16px; transition: all 0.3s ease; background: #f8f9fa;">
+                            <small style="color: #666; font-size: 12px;">Необязательно</small>
+                        </div>
+                        <div style="display: flex; gap: 10px; margin-top: 20px;">
+                            <button type="submit" style="background: linear-gradient(135deg, #667eea, #764ba2); color: white; border: none; padding: 14px 28px; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.3s ease;">Создать пользователя</button>
+                            <button type="button" style="background: linear-gradient(135deg, #6c757d, #545b62); color: white; border: none; padding: 14px 28px; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.3s ease;" onclick="closeCreateUserForm()">Отмена</button>
+                        </div>
+                    </form>
+                </div>
+            </div>`;
+
+        document.body.insertAdjacentHTML('beforeend', formHtml);
+
+        // Добавляем стили фокуса для полей формы
+        const inputs = document.querySelectorAll('#create-user-form input, #create-user-form select');
+        inputs.forEach(input => {
+            input.addEventListener('focus', function() {
+                this.style.borderColor = '#667eea';
+                this.style.background = 'white';
+                this.style.boxShadow = '0 0 0 3px rgba(102, 126, 234, 0.1)';
+            });
+            input.addEventListener('blur', function() {
+                this.style.borderColor = '#e9ecef';
+                this.style.background = '#f8f9fa';
+                this.style.boxShadow = 'none';
+            });
+        });
+
+        document.getElementById('create-user-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const userData = Object.fromEntries(formData);
+
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span style="display: inline-block; width: 20px; height: 20px; border: 3px solid #f3f3f3; border-top: 3px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite;"></span> Создание...';
+
+            try {
+                const response = await fetch('/api/admin/users', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(userData)
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showAlert('success', `Пользователь "${data.user.username}" создан успешно`);
+                    closeCreateUserForm();
+                    loadAdminPanel();
+                } else {
+                    if (data.details && Array.isArray(data.details)) {
+                        const errors = data.details.map(detail => detail.msg).join(', ');
+                        showAlert('error', `Ошибки валидации: ${errors}`);
+                    } else {
+                        showAlert('error', data.error || 'Ошибка создания пользователя');
+                    }
+                }
+            } catch (err) {
+                console.error('Ошибка создания пользователя:', err);
+                showAlert('error', 'Ошибка сети при создании пользователя');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = 'Создать пользователя';
+            }
+        });
+    }Html = `
+            <div id="create-user-modal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center;">
+                <div style="background: white; padding: 30px; border-radius: 12px; width: 90%; max-width: 500px; max-height: 90vh; overflow-y: auto;">
+                    <h3 style="margin-bottom: 20px; color: #333;">Создание пользователя</h3>
+                    <form id="create-user-form">
                         <div class="form-group">
                             <label>Логин *</label>
                             <input type="text" name="username" required minlength="3" maxlength="50" pattern="^[a-zA-Z0-9_]+$">
@@ -2354,38 +2520,38 @@
                 </div>
             </div>`;
 
-        document.body.insertAdjacentHTML('beforeend', formHtml);
+    document.body.insertAdjacentHTML('beforeend', formHtml);
 
-        document.getElementById('create-user-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
-            const userData = Object.fromEntries(formData);
+    document.getElementById('create-user-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const userData = Object.fromEntries(formData);
 
-            try {
-                const response = await fetch('/api/admin/users', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(userData)
-                });
+        try {
+            const response = await fetch('/api/admin/users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(userData)
+            });
 
-                const data = await response.json();
+            const data = await response.json();
 
-                if (response.ok) {
-                    showAlert('success', 'Пользователь создан успешно');
-                    closeCreateUserForm();
-                    loadAdminPanel();
+            if (response.ok) {
+                showAlert('success', 'Пользователь создан успешно');
+                closeCreateUserForm();
+                loadAdminPanel();
+            } else {
+                if (data.details && Array.isArray(data.details)) {
+                    const errors = data.details.map(detail => detail.msg).join(', ');
+                    showAlert('error', `${data.error}: ${errors}`);
                 } else {
-                    if (data.details && Array.isArray(data.details)) {
-                        const errors = data.details.map(detail => detail.msg).join(', ');
-                        showAlert('error', `${data.error}: ${errors}`);
-                    } else {
-                        showAlert('error', data.error);
-                    }
+                    showAlert('error', data.error);
                 }
-            } catch (err) {
-                showAlert('error', 'Ошибка создания пользователя');
             }
-        });
+        } catch (err) {
+            showAlert('error', 'Ошибка создания пользователя');
+        }
+    });
     }
 
     function closeCreateUserForm() {
